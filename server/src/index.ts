@@ -38,9 +38,9 @@ app.use(
     saveUninitialized: false,
     cookie: {
       httpOnly: true,
-      secure: NODE_ENV === 'production',
+      secure: false, // Set to true only when behind a TLS-terminating reverse proxy
       maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
-      sameSite: NODE_ENV === 'production' ? 'strict' : 'lax',
+      sameSite: 'lax', // Must be 'lax' for OAuth redirect flow to work
     },
   })
 );
