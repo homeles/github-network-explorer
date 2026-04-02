@@ -14,7 +14,7 @@ const NODE_ENV = process.env.NODE_ENV ?? 'development';
 
 // Security middleware
 app.use(helmet({
-  contentSecurityPolicy: NODE_ENV === 'production' ? undefined : false,
+  contentSecurityPolicy: false, // Disable CSP — default includes upgrade-insecure-requests which forces HTTPS
   hsts: false, // Disable HSTS — we don't terminate TLS here
 }));
 
