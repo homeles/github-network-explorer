@@ -15,6 +15,7 @@ const NODE_ENV = process.env.NODE_ENV ?? 'development';
 // Security middleware
 app.use(helmet({
   contentSecurityPolicy: NODE_ENV === 'production' ? undefined : false,
+  hsts: false, // Disable HSTS — we don't terminate TLS here
 }));
 
 // CORS
