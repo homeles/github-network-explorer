@@ -1,5 +1,5 @@
 // DAG layout utilities for commit graph visualization
-// Uses custom topological lane-based layout (no d3-dag dependency)
+// Uses a simple first-parent lane assignment like `git log --graph`
 
 import type { CommitNode } from './api.js';
 
@@ -21,8 +21,9 @@ export interface DagNode {
 }
 
 const LANE_WIDTH = 24;
-const ROW_HEIGHT = 48;
-const NODE_RADIUS = 8;
+const ROW_HEIGHT = 40;
+const NODE_RADIUS = 6;
+const GRAPH_LEFT_PAD = 16;
 
 export const GRAPH_CONSTANTS = {
   LANE_WIDTH,
@@ -32,15 +33,17 @@ export const GRAPH_CONSTANTS = {
 
 /**
  * Build a DAG layout from a flat list of commits.
- * Assigns lanes and coordinates for SVG rendering.
+ * Commits are expected in reverse-chronological order (newest first).
+ * Lane assignment follows first-parent: a commit inherits its child's lane
+ * via the first-parent link, keeping linear history in a straight column.
  */
 export function buildDag(
   commits: CommitNode[],
-  branchMap?: Map<string, string>
+  _branchMap?: Map<string, string>
 ): DagNode[] {
   if (commits.length === 0) return [];
 
-  // Deduplicate by SHA
+  // Deduplicate by SHA, preserve order
   const seen = new Set<string>();
   const unique: CommitNode[] = [];
   for (const c of commits) {
@@ -50,57 +53,13 @@ export function buildDag(
     }
   }
 
-  // Build a map for quick lookup
-  const commitMap = new Map<string, CommitNode>();
-  for (const c of unique) {
-    commitMap.set(c.oid, c);
-  }
+  // We process commits top-to-bottom (newest→oldest).
+  // `activeLanes` tracks which OID each lane column is currently expecting next.
+  // When we encounter a commit, we check if any lane is expecting it (as a
+  // first-parent). If yes, the commit takes that lane. If no, it gets a new lane.
 
-  // Topological sort (Kahn's algorithm)
-  // Build in-degree count based on parent relationships within our set
-  const inDegree = new Map<string, number>();
-  const children = new Map<string, string[]>(); // parent → children
-
-  for (const c of unique) {
-    if (!inDegree.has(c.oid)) inDegree.set(c.oid, 0);
-    for (const parent of c.parents.nodes) {
-      if (commitMap.has(parent.oid)) {
-        inDegree.set(c.oid, (inDegree.get(c.oid) ?? 0) + 1);
-        if (!children.has(parent.oid)) children.set(parent.oid, []);
-        children.get(parent.oid)!.push(c.oid);
-      }
-    }
-  }
-
-  // Start with commits that have no parents in our set (newest commits at top)
-  const queue: string[] = [];
-  for (const c of unique) {
-    if ((inDegree.get(c.oid) ?? 0) === 0) {
-      queue.push(c.oid);
-    }
-  }
-
-  const sorted: string[] = [];
-  while (queue.length > 0) {
-    const oid = queue.shift()!;
-    sorted.push(oid);
-    for (const child of children.get(oid) ?? []) {
-      const deg = (inDegree.get(child) ?? 1) - 1;
-      inDegree.set(child, deg);
-      if (deg === 0) queue.push(child);
-    }
-  }
-
-  // If there are cycles or unreachable nodes, append remaining
-  for (const c of unique) {
-    if (!sorted.includes(c.oid)) sorted.push(c.oid);
-  }
-
-  // Lane assignment
-  // Track which lanes are "in use" (have an ongoing branch line)
-  // A lane is freed when its commit's children are all assigned
+  const activeLanes: (string | null)[] = []; // lane index → expected OID
   const laneAssignment = new Map<string, number>();
-  const activeLanes: (string | null)[] = []; // lane index → current "tip" oid
 
   function getFreeLane(): number {
     const idx = activeLanes.indexOf(null);
@@ -109,66 +68,48 @@ export function buildDag(
     return activeLanes.length - 1;
   }
 
-  for (const oid of sorted) {
-    const commit = commitMap.get(oid)!;
-    const isMerge = commit.parents.nodes.length > 1;
+  for (const commit of unique) {
+    const oid = commit.oid;
 
-    // Check if any active lane is waiting for this commit as a child
-    let assignedLane = -1;
-
-    // Find if a parent of this commit already has a lane
+    // Find if any lane is expecting this commit
+    let lane = -1;
     for (let i = 0; i < activeLanes.length; i++) {
-      const laneOid = activeLanes[i];
-      if (laneOid !== null) {
-        const laneCommit = commitMap.get(laneOid);
-        if (laneCommit) {
-          const parentOids = laneCommit.parents.nodes.map((p) => p.oid);
-          if (parentOids.includes(oid) && assignedLane === -1) {
-            assignedLane = i;
-            activeLanes[i] = oid;
-          }
-        }
+      if (activeLanes[i] === oid) {
+        lane = i;
+        break;
       }
     }
 
-    if (assignedLane === -1) {
-      assignedLane = getFreeLane();
-      activeLanes[assignedLane] = oid;
+    if (lane === -1) {
+      // New branch head — allocate a lane
+      lane = getFreeLane();
     }
 
-    // Apply branch hint from branchMap if available
-    if (branchMap) {
-      const hint = branchMap.get(oid);
-      if (hint) {
-        if (hint === 'main' || hint === 'master') {
-          assignedLane = 0;
-        } else if (hint === 'develop' || hint === 'dev') {
-          if (assignedLane > 1) assignedLane = 1;
-        }
-      }
-    }
+    laneAssignment.set(oid, lane);
 
-    laneAssignment.set(oid, assignedLane);
+    const firstParentOid = commit.parents.nodes[0]?.oid ?? null;
 
-    // Free lanes for parents that won't be needed by other commits
-    for (const parentRef of commit.parents.nodes) {
-      const parentOid = parentRef.oid;
-      // Check if any other non-processed commit needs this parent
-      const parentLaneIdx = activeLanes.indexOf(parentOid);
-      if (parentLaneIdx >= 0 && isMerge) {
-        // Keep the parent lane alive if it's the main parent (index 0)
-        const isFirstParent = commit.parents.nodes[0]?.oid === parentOid;
-        if (!isFirstParent) {
-          activeLanes[parentLaneIdx] = null;
-        }
+    // This lane now expects the first parent
+    activeLanes[lane] = firstParentOid;
+
+    // For merge commits, the non-first parents each get their own lane
+    // (or reuse an existing one if already tracked)
+    for (let p = 1; p < commit.parents.nodes.length; p++) {
+      const pOid = commit.parents.nodes[p]!.oid;
+      // Check if this parent is already expected by some lane
+      const existingLane = activeLanes.indexOf(pOid);
+      if (existingLane === -1) {
+        // Allocate a new lane for this branch
+        const newLane = getFreeLane();
+        activeLanes[newLane] = pOid;
       }
+      // If already tracked, that lane will pick it up naturally
     }
   }
 
   // Build DagNode array with coordinates
-  return sorted.map((oid, row) => {
-    const commit = commitMap.get(oid)!;
-    const lane = laneAssignment.get(oid) ?? 0;
+  return unique.map((commit, row) => {
+    const lane = laneAssignment.get(commit.oid) ?? 0;
     const isMerge = commit.parents.nodes.length > 1;
 
     return {
@@ -182,7 +123,7 @@ export function buildDag(
       deletions: commit.deletions,
       lane,
       row,
-      x: lane * LANE_WIDTH + NODE_RADIUS + 8,
+      x: lane * LANE_WIDTH + GRAPH_LEFT_PAD,
       y: row * ROW_HEIGHT + ROW_HEIGHT / 2,
       isMerge,
     };
@@ -190,11 +131,11 @@ export function buildDag(
 }
 
 /**
- * Calculate total SVG width needed for the graph.
+ * Calculate total SVG width needed for the graph columns only.
  */
 export function calcGraphWidth(nodes: DagNode[]): number {
   const maxLane = nodes.reduce((m, n) => Math.max(m, n.lane), 0);
-  return (maxLane + 1) * LANE_WIDTH + NODE_RADIUS * 2 + 16;
+  return (maxLane + 1) * LANE_WIDTH + GRAPH_LEFT_PAD + NODE_RADIUS + 8;
 }
 
 /**
