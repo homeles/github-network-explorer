@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback } from 'react';
+import { useEffect, useRef, useMemo } from 'react';
 import * as d3 from 'd3';
 import { buildDag, calcGraphWidth, calcGraphHeight, GRAPH_CONSTANTS } from '../lib/dag.js';
 import type { DagNode } from '../lib/dag.js';
@@ -35,11 +35,22 @@ function formatDate(iso: string): string {
   return `${Math.floor(days / 365)}y ago`;
 }
 
+function formatFullDate(iso: string): string {
+  return new Date(iso).toLocaleString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+}
+
 interface Props {
   commits: CommitNode[];
   selectedOid: string | null;
   onSelectCommit: (oid: string) => void;
-  branchMap?: Map<string, string>;
+  branchMap?: Map<string, string[]>;
+  defaultBranch?: string;
 }
 
 export default function GraphVisualization({
@@ -47,48 +58,72 @@ export default function GraphVisualization({
   selectedOid,
   onSelectCommit,
   branchMap,
+  defaultBranch,
 }: Props) {
   const svgRef = useRef<SVGSVGElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const nodesRef = useRef<DagNode[]>([]);
+  const tooltipRef = useRef<HTMLDivElement>(null);
 
-  const renderGraph = useCallback(() => {
+  // Persist zoom across re-renders
+  const zoomBehaviorRef = useRef<d3.ZoomBehavior<SVGSVGElement, unknown> | null>(null);
+  const zoomTransformRef = useRef<d3.ZoomTransform>(d3.zoomIdentity);
+  const hasInitialFitRef = useRef(false);
+
+  // Fingerprint commits by their OIDs so we know when the list truly changed
+  const commitFingerprint = useMemo(
+    () => commits.map((c) => c.oid).join(','),
+    [commits]
+  );
+  const prevFingerprintRef = useRef('');
+
+  // Pre-compute DAG nodes (pure, no side-effects)
+  const nodes = useMemo(
+    () => buildDag(commits, branchMap, defaultBranch),
+    [commits, branchMap, defaultBranch]
+  );
+
+  useEffect(() => {
     const svg = svgRef.current;
     const container = containerRef.current;
-    if (!svg || !container) return;
-
-    const nodes = buildDag(commits, branchMap);
-    nodesRef.current = nodes;
-
+    const tooltip = tooltipRef.current;
+    if (!svg || !container || !tooltip) return;
     if (nodes.length === 0) return;
 
-    const svgWidth = Math.max(calcGraphWidth(nodes), 200);
+    const commitsChanged = commitFingerprint !== prevFingerprintRef.current;
+    prevFingerprintRef.current = commitFingerprint;
+
+    const graphWidth = Math.max(calcGraphWidth(nodes), 60);
     const svgHeight = calcGraphHeight(nodes);
     const viewWidth = container.clientWidth;
+    const viewHeight = container.clientHeight || 600;
 
     const d3svg = d3.select(svg);
     d3svg.selectAll('*').remove();
 
-    svg.setAttribute('width', String(viewWidth));
-    svg.setAttribute('height', String(container.clientHeight || 600));
+    d3svg
+      .attr('width', viewWidth)
+      .attr('height', viewHeight)
+      .attr('viewBox', `0 0 ${viewWidth} ${viewHeight}`);
 
     // Zoom/pan group
     const g = d3svg.append('g').attr('class', 'zoom-group');
 
-    // Setup zoom behavior
+    // Create (or reuse) zoom behavior
     const zoom = d3.zoom<SVGSVGElement, unknown>()
       .scaleExtent([0.1, 4])
       .on('zoom', (event: d3.D3ZoomEvent<SVGSVGElement, unknown>) => {
+        zoomTransformRef.current = event.transform;
         g.attr('transform', String(event.transform));
       });
 
+    zoomBehaviorRef.current = zoom;
     d3svg.call(zoom);
 
     // Build node lookup
     const nodeMap = new Map<string, DagNode>();
     for (const n of nodes) nodeMap.set(n.oid, n);
 
-    // Draw edges
+    // ─── Draw edges ───
     const edgeGroup = g.append('g').attr('class', 'edges');
 
     for (const node of nodes) {
@@ -102,7 +137,6 @@ export default function GraphVisualization({
         const y2 = parent.y;
         const color = getLaneColor(node.lane);
 
-        // Cubic bezier for curved edges
         const midY = (y1 + y2) / 2;
         const d =
           x1 === x2
@@ -119,11 +153,13 @@ export default function GraphVisualization({
       }
     }
 
-    // Draw nodes
+    // ─── Draw nodes ───
     const nodeGroup = g.append('g').attr('class', 'nodes');
 
-    const rightPanelWidth = 600; // room for labels
-    const totalWidth = Math.max(svgWidth, 200) + rightPanelWidth;
+    // Label area starts after the graph columns
+    const labelX = graphWidth + 12;
+    const rightPanelWidth = 600;
+    const totalContentWidth = graphWidth + rightPanelWidth;
 
     for (const node of nodes) {
       const isSelected = node.oid === selectedOid;
@@ -149,7 +185,6 @@ export default function GraphVisualization({
       }
 
       if (node.isMerge) {
-        // Diamond shape for merge commits
         const size = NODE_RADIUS;
         nodeG
           .append('polygon')
@@ -161,7 +196,6 @@ export default function GraphVisualization({
           .attr('stroke', color)
           .attr('stroke-width', 2);
       } else {
-        // Circle for regular commits
         nodeG
           .append('circle')
           .attr('cx', node.x)
@@ -172,8 +206,7 @@ export default function GraphVisualization({
           .attr('stroke-width', 2);
       }
 
-      // Commit message label
-      const labelX = svgWidth + 12;
+      // SHA label
       nodeG
         .append('text')
         .attr('x', labelX)
@@ -182,8 +215,7 @@ export default function GraphVisualization({
         .attr('fill', isSelected ? '#dfe2eb' : '#c0c7d4')
         .attr('font-size', '12px')
         .attr('font-family', 'monospace')
-        .text(node.abbreviatedOid)
-        .attr('class', 'commit-sha');
+        .text(node.abbreviatedOid);
 
       // Commit subject
       const subject = node.message.split('\n')[0] ?? '';
@@ -208,12 +240,47 @@ export default function GraphVisualization({
         .attr('font-size', '11px')
         .text(formatDate(node.committedDate));
 
-      // Hover effect
+      // ─── Tooltip on hover ───
       nodeG
-        .on('mouseover', function () {
-          d3.select(this)
-            .selectAll('circle, polygon')
-            .attr('fill', color);
+        .on('mouseover', function (event: MouseEvent) {
+          // Highlight node
+          d3.select(this).selectAll('circle, polygon').attr('fill', color);
+
+          // Show tooltip
+          const authorName = node.author?.name ?? 'Unknown';
+          const authorLogin = node.author?.user?.login;
+          const authorLine = authorLogin
+            ? `${authorName} (@${authorLogin})`
+            : authorName;
+          const subjectFull = node.message.split('\n')[0] ?? '';
+          const commitBranches = branchMap?.get(node.oid);
+          const branchesHtml = commitBranches && commitBranches.length > 0
+            ? `<div style="font-size:11px;color:#8b949e;margin-top:3px;display:flex;flex-wrap:wrap;gap:4px">
+                ${commitBranches.map((b) => `<span style="background:rgba(88,166,255,0.15);color:#58a6ff;border:1px solid rgba(88,166,255,0.3);border-radius:3px;padding:0 4px;font-family:monospace">${b}</span>`).join('')}
+               </div>`
+            : '';
+
+          tooltip.innerHTML = `
+            <div style="font-weight:600;color:#dfe2eb;margin-bottom:4px;word-break:break-all">${subjectFull}</div>
+            <div style="display:flex;gap:12px;font-size:11px;color:#8b949e;margin-bottom:2px">
+              <span style="font-family:monospace;color:#58a6ff">${node.abbreviatedOid}</span>
+              <span>${formatFullDate(node.committedDate)}</span>
+            </div>
+            <div style="font-size:11px;color:#c0c7d4">${authorLine}</div>
+            <div style="font-size:11px;color:#8b949e;margin-top:2px">
+              <span style="color:#3fb950">+${node.additions}</span>
+              <span style="margin-left:6px;color:#f85149">−${node.deletions}</span>
+              ${node.isMerge ? '<span style="margin-left:6px;color:#bc8cff">merge</span>' : ''}
+            </div>
+            ${branchesHtml}
+          `;
+          tooltip.style.opacity = '1';
+          tooltip.style.left = `${event.clientX + 12}px`;
+          tooltip.style.top = `${event.clientY - 10}px`;
+        })
+        .on('mousemove', function (event: MouseEvent) {
+          tooltip.style.left = `${event.clientX + 12}px`;
+          tooltip.style.top = `${event.clientY - 10}px`;
         })
         .on('mouseout', function () {
           if (node.oid !== selectedOid) {
@@ -221,35 +288,51 @@ export default function GraphVisualization({
               .selectAll('circle, polygon')
               .attr('fill', isSelected ? color : '#161b22');
           }
+          tooltip.style.opacity = '0';
         });
     }
 
-    // Set total SVG viewBox to fit everything
-    const totalSvgWidth = totalWidth + 80;
-    d3svg.attr('viewBox', `0 0 ${totalSvgWidth} ${svgHeight}`);
+    // ─── Zoom: restore or fit-to-window ───
+    if (!commitsChanged && hasInitialFitRef.current) {
+      // Selection-only change → restore saved transform
+      zoom.transform(d3svg, zoomTransformRef.current);
+    } else {
+      // Commits changed or first render → fit to window
+      const totalW = totalContentWidth + 80;
+      const scaleX = viewWidth / totalW;
+      const scaleY = viewHeight / svgHeight;
+      const scale = Math.min(scaleX, scaleY, 2);
+      const contentW = totalW * scale;
+      const contentH = svgHeight * scale;
+      const tx = Math.max((viewWidth - contentW) / 2, 0);
+      const ty = Math.max((viewHeight - contentH) / 2, 8);
+      const t = d3.zoomIdentity.translate(tx, ty).scale(scale);
+      zoom.transform(d3svg, t);
+      zoomTransformRef.current = t;
+      hasInitialFitRef.current = true;
+    }
+  }, [nodes, selectedOid, onSelectCommit, commitFingerprint]);
 
-    // Initial zoom to fit
-    const scale = Math.min(
-      viewWidth / totalSvgWidth,
-      (container.clientHeight || 600) / svgHeight,
-      1
-    );
-    const tx = (viewWidth - totalSvgWidth * scale) / 2;
-    zoom.transform(d3svg, d3.zoomIdentity.translate(tx, 8).scale(scale));
-  }, [commits, selectedOid, onSelectCommit, branchMap]);
-
-  useEffect(() => {
-    renderGraph();
-  }, [renderGraph]);
-
-  // Re-render on resize
+  // Re-fit on container resize
   useEffect(() => {
     const container = containerRef.current;
-    if (!container) return;
-    const observer = new ResizeObserver(() => renderGraph());
+    const svg = svgRef.current;
+    if (!container || !svg) return;
+
+    const observer = new ResizeObserver(() => {
+      const zoom = zoomBehaviorRef.current;
+      if (!zoom) return;
+      const d3svg = d3.select(svg);
+      const viewWidth = container.clientWidth;
+      const viewHeight = container.clientHeight || 600;
+      d3svg.attr('width', viewWidth).attr('height', viewHeight)
+        .attr('viewBox', `0 0 ${viewWidth} ${viewHeight}`);
+      // Restore current transform (don't reset)
+      zoom.transform(d3svg, zoomTransformRef.current);
+    });
     observer.observe(container);
     return () => observer.disconnect();
-  }, [renderGraph]);
+  }, []);
 
   if (commits.length === 0) {
     return (
@@ -271,11 +354,29 @@ export default function GraphVisualization({
   return (
     <div
       ref={containerRef}
-      style={{ width: '100%', height: '100%', overflow: 'hidden' }}
+      style={{ width: '100%', height: '100%', overflow: 'hidden', position: 'relative' }}
     >
       <svg
         ref={svgRef}
         style={{ width: '100%', height: '100%', display: 'block' }}
+      />
+      {/* Tooltip overlay */}
+      <div
+        ref={tooltipRef}
+        style={{
+          position: 'fixed',
+          pointerEvents: 'none',
+          opacity: 0,
+          transition: 'opacity 0.15s',
+          background: '#1c2128',
+          border: '1px solid #30363d',
+          borderRadius: 8,
+          padding: '8px 12px',
+          maxWidth: 400,
+          zIndex: 100,
+          boxShadow: '0 4px 16px rgba(0,0,0,0.4)',
+          fontSize: '12px',
+        }}
       />
     </div>
   );

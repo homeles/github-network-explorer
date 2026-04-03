@@ -101,7 +101,7 @@ export class GitHubService {
                         login
                       }
                     }
-                    parents {
+                    parents(first: 10) {
                       nodes {
                         oid
                       }
@@ -172,7 +172,7 @@ export class GitHubService {
               additions
               deletions
               changedFilesIfAvailable
-              parents {
+              parents(first: 10) {
                 nodes {
                   oid
                 }

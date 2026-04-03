@@ -1,0 +1,36 @@
+name: Docker Build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  docker-build:
+    name: Validate Docker Compose Build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Create dummy .env for build
+        run: |
+          cat > .env << 'EOF'
+          GITHUB_CLIENT_ID=dummy
+          GITHUB_CLIENT_SECRET=dummy
+          SESSION_SECRET=dummy-session-secret-for-ci-build-validation
+          CLIENT_URL=http://localhost:3001
+          SERVER_URL=http://localhost:3001
+          NODE_ENV=production
+          EOF
+
+      - name: Build with Docker Compose
+        run: docker compose build --no-cache
+
+      - name: Verify image was created
+        run: docker images | grep github-network-explorer

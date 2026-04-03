@@ -14,7 +14,8 @@ const NODE_ENV = process.env.NODE_ENV ?? 'development';
 
 // Security middleware
 app.use(helmet({
-  contentSecurityPolicy: NODE_ENV === 'production' ? undefined : false,
+  contentSecurityPolicy: false, // Disable CSP — default includes upgrade-insecure-requests which forces HTTPS
+  hsts: false, // Disable HSTS — we don't terminate TLS here
 }));
 
 // CORS
@@ -37,9 +38,9 @@ app.use(
     saveUninitialized: false,
     cookie: {
       httpOnly: true,
-      secure: NODE_ENV === 'production',
+      secure: false, // Set to true only when behind a TLS-terminating reverse proxy
       maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
-      sameSite: NODE_ENV === 'production' ? 'strict' : 'lax',
+      sameSite: 'lax', // Must be 'lax' for OAuth redirect flow to work
     },
   })
 );

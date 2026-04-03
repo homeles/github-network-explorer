@@ -5,9 +5,9 @@ WORKDIR /app
 COPY pnpm-workspace.yaml package.json pnpm-lock.yaml ./
 COPY client/package.json ./client/
 COPY server/package.json ./server/
-RUN pnpm install --frozen-lockfile
+RUN pnpm config set enableScripts true && pnpm install --frozen-lockfile
 COPY client ./client
-RUN pnpm --filter client build
+RUN pnpm --filter ./client build
 
 # Stage 2: Build server
 FROM node:22-alpine AS server-builder
@@ -16,9 +16,9 @@ WORKDIR /app
 COPY pnpm-workspace.yaml package.json pnpm-lock.yaml ./
 COPY client/package.json ./client/
 COPY server/package.json ./server/
-RUN pnpm install --frozen-lockfile
+RUN pnpm config set enableScripts true && pnpm install --frozen-lockfile
 COPY server ./server
-RUN pnpm --filter server build
+RUN pnpm --filter ./server build
 
 # Stage 3: Production
 FROM node:22-alpine AS production

@@ -1,14 +1,15 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
-import { useCommits, useCommitDetail } from '../hooks/useCommits.js';
+import { useMultiBranchCommits, useCommitDetail } from '../hooks/useCommits.js';
 import { api } from '../lib/api.js';
 import GraphVisualization from '../components/GraphVisualization.js';
 import CommitDetail from '../components/CommitDetail.js';
+import BranchSelector from '../components/BranchSelector.js';
 
 export default function GraphPage() {
   const { owner, repo } = useParams<{ owner: string; repo: string }>();
-  const [selectedBranch, setSelectedBranch] = useState<string>('');
+  const [selectedBranches, setSelectedBranches] = useState<string[]>([]);
   const [selectedOid, setSelectedOid] = useState<string | null>(null);
 
   const { data: overview, isLoading: overviewLoading } = useQuery({
@@ -17,19 +18,42 @@ export default function GraphPage() {
     enabled: !!owner && !!repo,
   });
 
-  const effectiveBranch =
-    selectedBranch ||
-    overview?.defaultBranchRef?.name ||
-    'main';
+  const defaultBranch = overview?.defaultBranchRef?.name ?? 'main';
+
+  // Reset branches + selection when repo changes
+  useEffect(() => {
+    setSelectedBranches([]);
+    setSelectedOid(null);
+  }, [owner, repo]);
+
+  // Once overview loads, seed selectedBranches with just the default branch
+  useEffect(() => {
+    if (overview && selectedBranches.length === 0) {
+      setSelectedBranches([defaultBranch]);
+    }
+  }, [overview, defaultBranch]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const effectiveBranches =
+    selectedBranches.length > 0
+      ? selectedBranches
+      : overview
+      ? [defaultBranch]
+      : [];
 
   const {
     commits,
+    branchMap,
     isLoading: commitsLoading,
     error,
     fetchNextPage,
     hasNextPage,
     isFetchingNextPage,
-  } = useCommits(owner!, repo!, effectiveBranch, !!owner && !!repo && !!effectiveBranch);
+  } = useMultiBranchCommits(
+    owner!,
+    repo!,
+    effectiveBranches,
+    !!owner && !!repo && effectiveBranches.length > 0
+  );
 
   const { commit: commitDetail, isLoading: detailLoading } = useCommitDetail(
     owner!,
@@ -52,6 +76,8 @@ export default function GraphPage() {
       </div>
     );
   }
+
+  const allBranchNames = overview?.branches.map((b) => b.name) ?? [];
 
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
@@ -80,30 +106,16 @@ export default function GraphPage() {
 
         {/* Branch selector */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-          <span style={{ color: '#8b949e', fontSize: '0.875rem' }}>Branch:</span>
-          <select
-            value={effectiveBranch}
-            onChange={(e) => {
-              setSelectedBranch(e.target.value);
+          <span style={{ color: '#8b949e', fontSize: '0.875rem' }}>Branches:</span>
+          <BranchSelector
+            branches={allBranchNames}
+            selected={effectiveBranches}
+            onChange={(next) => {
+              setSelectedBranches(next);
               setSelectedOid(null);
             }}
-            style={{
-              background: '#0d1117',
-              border: '1px solid #30363d',
-              borderRadius: 6,
-              color: '#dfe2eb',
-              padding: '0.25rem 0.5rem',
-              fontSize: '0.875rem',
-              cursor: 'pointer',
-            }}
             disabled={overviewLoading}
-          >
-            {overview?.branches.map((b) => (
-              <option key={b.name} value={b.name}>
-                {b.name}
-              </option>
-            )) ?? <option value={effectiveBranch}>{effectiveBranch}</option>}
-          </select>
+          />
         </div>
 
         {/* Stats */}
@@ -201,6 +213,8 @@ export default function GraphPage() {
               commits={commits}
               selectedOid={selectedOid}
               onSelectCommit={setSelectedOid}
+              branchMap={branchMap}
+              defaultBranch={defaultBranch}
             />
           )}
 
@@ -216,7 +230,7 @@ export default function GraphPage() {
                 fontSize: '0.875rem',
               }}
             >
-              No commits found for branch &quot;{effectiveBranch}&quot;
+              No commits found for the selected branch(es)
             </div>
           )}
 
@@ -244,7 +258,7 @@ export default function GraphPage() {
                   opacity: isFetchingNextPage ? 0.6 : 1,
                 }}
               >
-                {isFetchingNextPage ? 'Loading more...' : `Load more commits`}
+                {isFetchingNextPage ? 'Loading more...' : 'Load more commits'}
               </button>
             </div>
           )}
@@ -272,6 +286,9 @@ export default function GraphPage() {
               <CommitDetail
                 commit={commitDetail}
                 onClose={() => setSelectedOid(null)}
+                owner={owner}
+                repo={repo}
+                branches={selectedOid ? branchMap.get(selectedOid) : undefined}
               />
             ) : null}
           </div>
