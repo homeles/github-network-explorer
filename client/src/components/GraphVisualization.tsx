@@ -69,8 +69,7 @@ export default function GraphVisualization({
     const d3svg = d3.select(svg);
     d3svg.selectAll('*').remove();
 
-    svg.setAttribute('width', String(viewWidth));
-    svg.setAttribute('height', String(container.clientHeight || 600));
+    // Width/height set after layout calculation via d3 (see bottom of render).
 
     // Zoom/pan group
     const g = d3svg.append('g').attr('class', 'zoom-group');
@@ -224,18 +223,24 @@ export default function GraphVisualization({
         });
     }
 
-    // Set total SVG viewBox to fit everything
-    const totalSvgWidth = totalWidth + 80;
-    d3svg.attr('viewBox', `0 0 ${totalSvgWidth} ${svgHeight}`);
+    // Use the container dimensions as the SVG coordinate space (no viewBox scaling).
+    // The zoom transform alone handles fit-to-window.
+    const viewHeight = container.clientHeight || 600;
+    d3svg
+      .attr('width', viewWidth)
+      .attr('height', viewHeight)
+      .attr('viewBox', `0 0 ${viewWidth} ${viewHeight}`);
 
-    // Initial zoom to fit
-    const scale = Math.min(
-      viewWidth / totalSvgWidth,
-      (container.clientHeight || 600) / svgHeight,
-      1
-    );
-    const tx = (viewWidth - totalSvgWidth * scale) / 2;
-    zoom.transform(d3svg, d3.zoomIdentity.translate(tx, 8).scale(scale));
+    // Fit the full content (graph lanes + label panel) into the viewport
+    const totalSvgWidth = totalWidth + 80;
+    const scaleX = viewWidth / totalSvgWidth;
+    const scaleY = viewHeight / svgHeight;
+    const scale = Math.min(scaleX, scaleY, 2); // cap at 2× so it doesn't blow up for tiny graphs
+    const contentW = totalSvgWidth * scale;
+    const contentH = svgHeight * scale;
+    const tx = Math.max((viewWidth - contentW) / 2, 0);
+    const ty = Math.max((viewHeight - contentH) / 2, 8);
+    zoom.transform(d3svg, d3.zoomIdentity.translate(tx, ty).scale(scale));
   }, [commits, selectedOid, onSelectCommit, branchMap]);
 
   useEffect(() => {
