@@ -20,6 +20,12 @@ export default function GraphPage() {
 
   const defaultBranch = overview?.defaultBranchRef?.name ?? 'main';
 
+  // Reset branches + selection when repo changes
+  useEffect(() => {
+    setSelectedBranches([]);
+    setSelectedOid(null);
+  }, [owner, repo]);
+
   // Once overview loads, seed selectedBranches with just the default branch
   useEffect(() => {
     if (overview && selectedBranches.length === 0) {
