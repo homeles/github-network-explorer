@@ -49,7 +49,8 @@ interface Props {
   commits: CommitNode[];
   selectedOid: string | null;
   onSelectCommit: (oid: string) => void;
-  branchMap?: Map<string, string>;
+  branchMap?: Map<string, string[]>;
+  defaultBranch?: string;
 }
 
 export default function GraphVisualization({
@@ -57,6 +58,7 @@ export default function GraphVisualization({
   selectedOid,
   onSelectCommit,
   branchMap,
+  defaultBranch,
 }: Props) {
   const svgRef = useRef<SVGSVGElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -75,7 +77,10 @@ export default function GraphVisualization({
   const prevFingerprintRef = useRef('');
 
   // Pre-compute DAG nodes (pure, no side-effects)
-  const nodes = useMemo(() => buildDag(commits, branchMap), [commits, branchMap]);
+  const nodes = useMemo(
+    () => buildDag(commits, branchMap, defaultBranch),
+    [commits, branchMap, defaultBranch]
+  );
 
   useEffect(() => {
     const svg = svgRef.current;
@@ -248,6 +253,12 @@ export default function GraphVisualization({
             ? `${authorName} (@${authorLogin})`
             : authorName;
           const subjectFull = node.message.split('\n')[0] ?? '';
+          const commitBranches = branchMap?.get(node.oid);
+          const branchesHtml = commitBranches && commitBranches.length > 0
+            ? `<div style="font-size:11px;color:#8b949e;margin-top:3px;display:flex;flex-wrap:wrap;gap:4px">
+                ${commitBranches.map((b) => `<span style="background:rgba(88,166,255,0.15);color:#58a6ff;border:1px solid rgba(88,166,255,0.3);border-radius:3px;padding:0 4px;font-family:monospace">${b}</span>`).join('')}
+               </div>`
+            : '';
 
           tooltip.innerHTML = `
             <div style="font-weight:600;color:#dfe2eb;margin-bottom:4px;word-break:break-all">${subjectFull}</div>
@@ -261,6 +272,7 @@ export default function GraphVisualization({
               <span style="margin-left:6px;color:#f85149">−${node.deletions}</span>
               ${node.isMerge ? '<span style="margin-left:6px;color:#bc8cff">merge</span>' : ''}
             </div>
+            ${branchesHtml}
           `;
           tooltip.style.opacity = '1';
           tooltip.style.left = `${event.clientX + 12}px`;

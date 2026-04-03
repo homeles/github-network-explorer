@@ -39,7 +39,8 @@ export const GRAPH_CONSTANTS = {
  */
 export function buildDag(
   commits: CommitNode[],
-  _branchMap?: Map<string, string>
+  branchMap?: Map<string, string[]>,
+  defaultBranch?: string
 ): DagNode[] {
   if (commits.length === 0) return [];
 
@@ -61,7 +62,14 @@ export function buildDag(
   const activeLanes: (string | null)[] = []; // lane index → expected OID
   const laneAssignment = new Map<string, number>();
 
-  function getFreeLane(): number {
+  function getFreeLane(preferLane0 = false): number {
+    if (preferLane0) {
+      // Lane 0 is free if it hasn't been allocated yet or is null
+      if (activeLanes.length === 0 || activeLanes[0] === null) {
+        if (activeLanes.length === 0) activeLanes.push(null);
+        return 0;
+      }
+    }
     const idx = activeLanes.indexOf(null);
     if (idx >= 0) return idx;
     activeLanes.push(null);
@@ -81,8 +89,15 @@ export function buildDag(
     }
 
     if (lane === -1) {
-      // New branch head — allocate a lane
-      lane = getFreeLane();
+      // New branch head — if this commit belongs only to the default branch,
+      // prefer lane 0 to keep the main history in the leftmost column.
+      const commitBranches = branchMap?.get(oid);
+      const isDefaultOnly =
+        !!defaultBranch &&
+        !!commitBranches &&
+        commitBranches.length === 1 &&
+        commitBranches[0] === defaultBranch;
+      lane = getFreeLane(isDefaultOnly);
     }
 
     laneAssignment.set(oid, lane);
