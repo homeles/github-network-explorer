@@ -286,6 +286,9 @@ export default function GraphPage() {
               <CommitDetail
                 commit={commitDetail}
                 onClose={() => setSelectedOid(null)}
+                owner={owner}
+                repo={repo}
+                branches={selectedOid ? branchMap.get(selectedOid) : undefined}
               />
             ) : null}
           </div>

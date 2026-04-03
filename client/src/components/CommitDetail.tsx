@@ -3,6 +3,9 @@ import type { CommitDetail as CommitDetailType } from '../lib/api.js';
 interface Props {
   commit: CommitDetailType;
   onClose: () => void;
+  owner: string;
+  repo: string;
+  branches?: string[];
 }
 
 function formatDate(iso: string): string {
@@ -78,7 +81,7 @@ function PRStateBadge({ state }: { state: string }) {
   );
 }
 
-export default function CommitDetail({ commit, onClose }: Props) {
+export default function CommitDetail({ commit, onClose, owner, repo, branches }: Props) {
   const firstLine = commit.message.split('\n')[0] ?? '';
   const bodyLines = commit.message.split('\n').slice(2).join('\n').trim();
 
@@ -109,13 +112,41 @@ export default function CommitDetail({ commit, onClose }: Props) {
         <div>
           <div
             style={{
-              fontFamily: 'monospace',
-              color: '#58a6ff',
-              fontSize: '0.875rem',
-              fontWeight: 600,
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.5rem',
             }}
           >
-            {commit.abbreviatedOid}
+            <span
+              style={{
+                fontFamily: 'monospace',
+                color: '#58a6ff',
+                fontSize: '0.875rem',
+                fontWeight: 600,
+              }}
+            >
+              {commit.abbreviatedOid}
+            </span>
+            <a
+              href={`https://github.com/${owner}/${repo}/commit/${commit.oid}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              title="View on GitHub"
+              style={{
+                color: '#8b949e',
+                fontSize: '0.75rem',
+                textDecoration: 'none',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '0.25rem',
+                padding: '0.1rem 0.4rem',
+                borderRadius: 4,
+                border: '1px solid #30363d',
+                background: '#0d1117',
+              }}
+            >
+              ↗ GitHub
+            </a>
           </div>
           {commit.statusCheckRollup && (
             <div style={{ marginTop: 4 }}>
@@ -223,6 +254,43 @@ export default function CommitDetail({ commit, onClose }: Props) {
             {formatDate(commit.committedDate)}
           </div>
         </section>
+
+        {/* Branches */}
+        {branches && branches.length > 0 && (
+          <section style={{ marginBottom: '1.25rem' }}>
+            <div
+              style={{
+                fontSize: '0.75rem',
+                fontWeight: 600,
+                color: '#8b949e',
+                textTransform: 'uppercase',
+                letterSpacing: '0.05em',
+                marginBottom: '0.5rem',
+              }}
+            >
+              Branches
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.375rem' }}>
+              {branches.map((b) => (
+                <span
+                  key={b}
+                  style={{
+                    background: 'rgba(88,166,255,0.15)',
+                    color: '#58a6ff',
+                    border: '1px solid rgba(88,166,255,0.3)',
+                    borderRadius: 12,
+                    padding: '0.15rem 0.6rem',
+                    fontSize: '0.75rem',
+                    fontFamily: 'monospace',
+                    fontWeight: 500,
+                  }}
+                >
+                  {b}
+                </span>
+              ))}
+            </div>
+          </section>
+        )}
 
         {/* Stats */}
         <section style={{ marginBottom: '1.25rem' }}>
