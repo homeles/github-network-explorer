@@ -51,11 +51,20 @@ export default function GraphVisualization({
   const svgRef = useRef<SVGSVGElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const nodesRef = useRef<DagNode[]>([]);
+  const zoomTransformRef = useRef<d3.ZoomTransform | null>(null);
+  const prevCommitsRef = useRef<CommitNode[]>([]);
 
   const renderGraph = useCallback(() => {
     const svg = svgRef.current;
     const container = containerRef.current;
     if (!svg || !container) return;
+
+    // Detect whether commits actually changed (not just selection)
+    const commitsChanged = commits !== prevCommitsRef.current;
+    prevCommitsRef.current = commits;
+
+    // Save current zoom transform before clearing
+    const savedTransform = zoomTransformRef.current;
 
     const nodes = buildDag(commits, branchMap);
     nodesRef.current = nodes;
@@ -78,6 +87,7 @@ export default function GraphVisualization({
     const zoom = d3.zoom<SVGSVGElement, unknown>()
       .scaleExtent([0.1, 4])
       .on('zoom', (event: d3.D3ZoomEvent<SVGSVGElement, unknown>) => {
+        zoomTransformRef.current = event.transform;
         g.attr('transform', String(event.transform));
       });
 
@@ -231,16 +241,20 @@ export default function GraphVisualization({
       .attr('height', viewHeight)
       .attr('viewBox', `0 0 ${viewWidth} ${viewHeight}`);
 
-    // Fit the full content (graph lanes + label panel) into the viewport
-    const totalSvgWidth = totalWidth + 80;
-    const scaleX = viewWidth / totalSvgWidth;
-    const scaleY = viewHeight / svgHeight;
-    const scale = Math.min(scaleX, scaleY, 2); // cap at 2× so it doesn't blow up for tiny graphs
-    const contentW = totalSvgWidth * scale;
-    const contentH = svgHeight * scale;
-    const tx = Math.max((viewWidth - contentW) / 2, 0);
-    const ty = Math.max((viewHeight - contentH) / 2, 8);
-    zoom.transform(d3svg, d3.zoomIdentity.translate(tx, ty).scale(scale));
+    // Restore previous zoom if only selection changed; fit-to-window on first load or commit changes
+    if (!commitsChanged && savedTransform) {
+      zoom.transform(d3svg, savedTransform);
+    } else {
+      const totalSvgWidth = totalWidth + 80;
+      const scaleX = viewWidth / totalSvgWidth;
+      const scaleY = viewHeight / svgHeight;
+      const scale = Math.min(scaleX, scaleY, 2);
+      const contentW = totalSvgWidth * scale;
+      const contentH = svgHeight * scale;
+      const tx = Math.max((viewWidth - contentW) / 2, 0);
+      const ty = Math.max((viewHeight - contentH) / 2, 8);
+      zoom.transform(d3svg, d3.zoomIdentity.translate(tx, ty).scale(scale));
+    }
   }, [commits, selectedOid, onSelectCommit, branchMap]);
 
   useEffect(() => {
