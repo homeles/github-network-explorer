@@ -230,7 +230,6 @@ export default function NetworkPage() {
               onSelectCommit={setSelectedOid}
               branchMap={branchMap}
               defaultBranch={defaultBranch}
-              selectedBranches={effectiveBranches}
             />
           )}
 
