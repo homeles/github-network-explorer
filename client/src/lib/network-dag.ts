@@ -242,7 +242,14 @@ export function buildNetworkLayout(
     .sort((a, b) => new Date(a.committedDate).getTime() - new Date(b.committedDate).getTime());
   branchDisplayCommits.set(db, spineCommits);
 
+  // Collect all OIDs that belong to virtual branches (to exclude from live branches)
+  const virtualBranchOids = new Set<string>();
+  for (const [, vCommits] of virtualBranchCommits) {
+    for (const c of vCommits) virtualBranchOids.add(c.oid);
+  }
+
   // Live non-default branches: show unique commits + fork point
+  // Exclude commits that belong to virtual branches
   for (const branch of visibleLive) {
     if (branch === db) continue;
     const bCommits = commits
@@ -253,6 +260,8 @@ export function buildNetworkLayout(
     let forkCommit: CommitNode | null = null;
 
     for (const c of bCommits) {
+      // Skip commits that belong to a virtual (deleted) feature branch
+      if (virtualBranchOids.has(c.oid)) continue;
       if (!spine.has(c.oid)) {
         uniqueCommits.push(c);
       } else if (uniqueCommits.length === 0) {
@@ -261,7 +270,17 @@ export function buildNetworkLayout(
     }
 
     const display: CommitNode[] = [];
-    if (forkCommit) display.push(forkCommit);
+    // Only include fork point if the branch has unique commits
+    // and the fork point is actually adjacent to the first unique commit
+    if (forkCommit && uniqueCommits.length > 0) {
+      const firstUnique = uniqueCommits[0]!;
+      // Check if forkCommit is the FIRST parent of the first unique commit
+      // (not second parent — that would be a cross-branch merge, not a fork)
+      const isFirstParent = firstUnique.parents.nodes[0]?.oid === forkCommit.oid;
+      if (isFirstParent) {
+        display.push(forkCommit);
+      }
+    }
     display.push(...uniqueCommits);
 
     if (display.length === 0 && bCommits.length > 0) {
@@ -482,20 +501,23 @@ export function buildNetworkLayout(
   }
 
   // 6d. Generic cross-branch merge connectors
-  //     Only for LIVE branches — virtual branches already have connectors from 6c.
-  //     Only process non-first parents of merge commits.
+  //     For merge commits on LIVE branches: connect non-first parents across lanes.
+  //     For merge commits on VIRTUAL branches: only connect non-first parents
+  //     that are on the SPINE (sync merges from main into feature branch).
   const processedMergeOids = new Set<string>();
   for (const node of nodes) {
     if (!node.isMerge) continue;
-    // Skip virtual branches — their connections are handled by 6c
-    if (node.isVirtualBranch) continue;
-    // Skip if we already processed this merge commit OID on another branch
     if (processedMergeOids.has(node.oid)) continue;
     processedMergeOids.add(node.oid);
 
     // Only process non-first parents (the merged-in branches)
     for (let p = 1; p < node.parents.nodes.length; p++) {
       const parentOid = node.parents.nodes[p]!.oid;
+
+      // For virtual branches: only draw cross-lane edges to spine commits
+      // (sync merges from main into feature). Skip non-spine parents to
+      // avoid duplicate arrows (6c already handles fork/merge-back to spine).
+      if (node.isVirtualBranch && !spine.has(parentOid)) continue;
 
       // Find the best branch to connect to for this parent:
       // Priority: same virtual branch > other virtual branch > live non-default > default
