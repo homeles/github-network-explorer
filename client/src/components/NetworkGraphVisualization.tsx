@@ -1,13 +1,12 @@
 import { useEffect, useRef, useMemo } from 'react';
 import * as d3 from 'd3';
 import { buildNetworkLayout, getLaneColor } from '../lib/network-dag.js';
-import type { NetworkNode } from '../lib/network-dag.js';
 import type { CommitNode } from '../lib/api.js';
 
 const NODE_RADIUS = 6;
-const LANE_HEIGHT = 36;
-const LANE_PADDING_TOP = 48;
-const BRANCH_LABEL_WIDTH = 160;
+const LANE_HEIGHT = 40;
+const LANE_PADDING_TOP = 32;
+const BRANCH_LABEL_WIDTH = 220;
 
 const LANE_COLORS = [
   '#58a6ff', '#3fb950', '#bc8cff', '#d29922',
@@ -162,21 +161,19 @@ export default function NetworkGraphVisualization({
     }
 
     for (const edge of layout.edges) {
-      const { x1, y1, x2, y2, color } = edge;
-      const isCrossLane = y1 !== y2;
+      const { x1, y1, x2, y2, color, isCrossLane } = edge;
 
-      // Figure out lane index for arrow marker
       const laneIdx = LANE_COLORS.indexOf(color);
       const markerIdx = laneIdx >= 0 ? laneIdx : 0;
 
       let d: string;
       if (!isCrossLane) {
-        // Same lane — straight line
         d = `M ${x1} ${y1} L ${x2} ${y2}`;
       } else {
-        // Cross-lane — curved connection
-        const midX = (x1 + x2) / 2;
-        d = `M ${x1} ${y1} C ${midX} ${y1}, ${midX} ${y2}, ${x2} ${y2}`;
+        // Cross-lane: smooth S-curve
+        const dx = Math.abs(x2 - x1);
+        const curveOffset = Math.min(dx * 0.4, 30);
+        d = `M ${x1} ${y1} C ${x1 + curveOffset} ${y1}, ${x2 - curveOffset} ${y2}, ${x2} ${y2}`;
       }
 
       const path = edgeGroup
@@ -184,10 +181,9 @@ export default function NetworkGraphVisualization({
         .attr('d', d)
         .attr('fill', 'none')
         .attr('stroke', color)
-        .attr('stroke-width', isCrossLane ? 2.5 : 1.5)
-        .attr('stroke-opacity', isCrossLane ? 0.7 : 0.5);
+        .attr('stroke-width', isCrossLane ? 2 : 1.5)
+        .attr('stroke-opacity', isCrossLane ? 0.65 : 0.45);
 
-      // Add arrowhead to cross-lane edges
       if (isCrossLane) {
         path.attr('marker-end', `url(#arrow-${markerIdx})`);
       }
@@ -195,12 +191,11 @@ export default function NetworkGraphVisualization({
 
     // Draw nodes
     const nodeGroup = g.append('g').attr('class', 'nodes');
-    const nodeMap = new Map<string, NetworkNode>();
-    for (const n of layout.nodes) nodeMap.set(n.oid, n);
 
     for (const node of layout.nodes) {
       const isSelected = node.oid === selectedOid;
       const color = getLaneColor(node.lane);
+      const radius = node.isPrimary ? NODE_RADIUS : NODE_RADIUS - 1;
 
       const nodeG = nodeGroup
         .append('g')
@@ -222,7 +217,7 @@ export default function NetworkGraphVisualization({
       }
 
       if (node.isMerge) {
-        const size = NODE_RADIUS;
+        const size = radius;
         nodeG
           .append('polygon')
           .attr(
@@ -237,7 +232,7 @@ export default function NetworkGraphVisualization({
           .append('circle')
           .attr('cx', node.x)
           .attr('cy', node.y)
-          .attr('r', NODE_RADIUS)
+          .attr('r', radius)
           .attr('fill', isSelected ? color : '#161b22')
           .attr('stroke', color)
           .attr('stroke-width', 2);
@@ -399,27 +394,30 @@ export default function NetworkGraphVisualization({
                   height: LANE_HEIGHT,
                   display: 'flex',
                   alignItems: 'center',
-                  padding: '0 12px',
-                  gap: '6px',
+                  padding: '0 10px 0 12px',
+                  gap: '8px',
                 }}
               >
                 <span
                   style={{
-                    width: 8,
-                    height: 8,
+                    width: 10,
+                    height: 10,
                     borderRadius: '50%',
                     background: color,
                     flexShrink: 0,
+                    border: `2px solid ${color}66`,
                   }}
                 />
                 <span
                   style={{
-                    color: '#c0c7d4',
-                    fontSize: '0.75rem',
-                    fontFamily: 'monospace',
+                    color: '#dfe2eb',
+                    fontSize: '0.8125rem',
+                    fontFamily: "'JetBrains Mono', 'SF Mono', Monaco, monospace",
+                    fontWeight: 500,
                     overflow: 'hidden',
                     textOverflow: 'ellipsis',
                     whiteSpace: 'nowrap',
+                    lineHeight: 1.2,
                   }}
                   title={name}
                 >
