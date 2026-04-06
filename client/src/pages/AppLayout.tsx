@@ -42,7 +42,8 @@ export default function AppLayout() {
     void navigate(`/app/repo/${repo.owner.login}/${repo.name}`);
   }
 
-  const isOnGraphPage = location.pathname.includes('/app/repo/');
+  const isOnGraphPage = location.pathname.includes('/app/repo/') && !location.pathname.endsWith('/network');
+  const isOnNetworkPage = location.pathname.endsWith('/network');
 
   if (isLoading) {
     return (
@@ -327,10 +328,18 @@ export default function AppLayout() {
           {[
             {
               icon: '⬡',
-              label: 'Graph',
+              label: 'Commit Graph',
               active: isOnGraphPage,
               href: currentRepo
                 ? `/app/repo/${currentRepo.owner.login}/${currentRepo.name}`
+                : '/app',
+            },
+            {
+              icon: '🔀',
+              label: 'Network Graph',
+              active: isOnNetworkPage,
+              href: currentRepo
+                ? `/app/repo/${currentRepo.owner.login}/${currentRepo.name}/network`
                 : '/app',
             },
             { icon: '📋', label: 'Pull Requests', active: false, href: '#' },
