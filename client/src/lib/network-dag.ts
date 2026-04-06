@@ -270,7 +270,18 @@ export function buildNetworkLayout(
     }
 
     const display: CommitNode[] = [];
-    if (forkCommit) display.push(forkCommit);
+    // Only include fork point if the branch has unique commits
+    // and the fork point is actually adjacent to the first unique commit
+    if (forkCommit && uniqueCommits.length > 0) {
+      const firstUnique = uniqueCommits[0]!;
+      // Check if forkCommit is a parent of the first unique commit
+      const isDirectParent = firstUnique.parents.nodes.some(
+        (p) => p.oid === forkCommit!.oid
+      );
+      if (isDirectParent) {
+        display.push(forkCommit);
+      }
+    }
     display.push(...uniqueCommits);
 
     if (display.length === 0 && bCommits.length > 0) {
