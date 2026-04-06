@@ -9,19 +9,6 @@ const LANE_HEIGHT = 36;
 const LANE_PADDING_TOP = 48;
 const BRANCH_LABEL_WIDTH = 160;
 
-function formatDate(iso: string): string {
-  const d = new Date(iso);
-  const now = new Date();
-  const diff = now.getTime() - d.getTime();
-  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
-  if (days === 0) return 'today';
-  if (days === 1) return 'yesterday';
-  if (days < 7) return `${days}d ago`;
-  if (days < 30) return `${Math.floor(days / 7)}w ago`;
-  if (days < 365) return `${Math.floor(days / 30)}mo ago`;
-  return `${Math.floor(days / 365)}y ago`;
-}
-
 function formatFullDate(iso: string): string {
   return new Date(iso).toLocaleString('en-US', {
     month: 'short',

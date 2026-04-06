@@ -40,7 +40,6 @@ export interface NetworkLayout {
 
 const LANE_HEIGHT = 36;
 const LANE_PADDING_TOP = 48; // space for time axis
-const BRANCH_LABEL_WIDTH = 0; // labels drawn separately
 const MIN_X_GAP = 32;
 const NODE_PADDING_LEFT = 24;
 const NODE_PADDING_RIGHT = 40;
