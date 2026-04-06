@@ -337,6 +337,22 @@ export function buildNetworkLayout(
   // 6. Build edges
   const edges: NetworkEdge[] = [];
   const edgeSet = new Set<string>();
+  // Track node pairs that have cross-lane edges (regardless of prefix)
+  const crossLanePairs = new Set<string>();
+
+  function addEdge(key: string, edge: NetworkEdge) {
+    if (edgeSet.has(key)) return;
+    edgeSet.add(key);
+    if (edge.isCrossLane) {
+      crossLanePairs.add(`${edge.sourceKey}<>${edge.targetKey}`);
+      crossLanePairs.add(`${edge.targetKey}<>${edge.sourceKey}`);
+    }
+    edges.push(edge);
+  }
+
+  function hasCrossLanePair(nodeKeyA: string, nodeKeyB: string): boolean {
+    return crossLanePairs.has(`${nodeKeyA}<>${nodeKeyB}`);
+  }
 
   // 6a. Within-branch edges: connect consecutive commits
   for (const branch of allBranches) {
@@ -371,54 +387,39 @@ export function buildNetworkLayout(
   }
 
   // 6b. Cross-lane connectors for live non-default branches
-  //     Only draw a fork connector if the branch genuinely forks from default
-  //     (i.e., the first displayed commit is a shared spine commit and the
-  //     branch has unique commits after it). Skip for long-lived branches
-  //     that have sync merges — those are handled by 6d.
   for (const branch of visibleLive) {
     if (branch === db) continue;
     const lane = branchIndex.get(branch)!;
     const displayCommits = branchDisplayCommits.get(branch) ?? [];
-    if (displayCommits.length < 2) continue; // Need at least fork point + 1 unique commit
+    if (displayCommits.length < 2) continue;
 
     const firstCommit = displayCommits[0]!;
     const secondCommit = displayCommits[1]!;
     const firstKey = `${firstCommit.oid}:${branch}`;
     const firstNode = nodeByKey.get(firstKey);
 
-    // Only draw fork if: first commit is on spine AND second commit is NOT on spine
-    // This means the branch genuinely diverges at this point
     if (firstNode && spine.has(firstCommit.oid) && !spine.has(secondCommit.oid)) {
       const defaultKey = `${firstCommit.oid}:${db}`;
       const defaultNode = nodeByKey.get(defaultKey);
       if (defaultNode) {
-        const edgeKey = `fork:${defaultKey}->${firstKey}`;
-        if (!edgeSet.has(edgeKey)) {
-          edgeSet.add(edgeKey);
-          edges.push({
-            sourceKey: defaultKey, targetKey: firstKey,
-            x1: defaultNode.x, y1: defaultNode.y,
-            x2: firstNode.x, y2: firstNode.y,
-            color: getLaneColor(lane), isCrossLane: true,
-          });
-        }
+        addEdge(`fork:${defaultKey}->${firstKey}`, {
+          sourceKey: defaultKey, targetKey: firstKey,
+          x1: defaultNode.x, y1: defaultNode.y,
+          x2: firstNode.x, y2: firstNode.y,
+          color: getLaneColor(lane), isCrossLane: true,
+        });
       }
     } else if (firstNode && !spine.has(firstCommit.oid)) {
-      // First unique commit — connect from parent on default branch
       for (const parentRef of firstCommit.parents.nodes) {
         const parentDefaultKey = `${parentRef.oid}:${db}`;
         const parentNode = nodeByKey.get(parentDefaultKey);
         if (parentNode) {
-          const edgeKey = `fork:${parentDefaultKey}->${firstKey}`;
-          if (!edgeSet.has(edgeKey)) {
-            edgeSet.add(edgeKey);
-            edges.push({
-              sourceKey: parentDefaultKey, targetKey: firstKey,
-              x1: parentNode.x, y1: parentNode.y,
-              x2: firstNode.x, y2: firstNode.y,
-              color: getLaneColor(lane), isCrossLane: true,
-            });
-          }
+          addEdge(`fork:${parentDefaultKey}->${firstKey}`, {
+            sourceKey: parentDefaultKey, targetKey: firstKey,
+            x1: parentNode.x, y1: parentNode.y,
+            x2: firstNode.x, y2: firstNode.y,
+            color: getLaneColor(lane), isCrossLane: true,
+          });
           break;
         }
       }
@@ -426,8 +427,6 @@ export function buildNetworkLayout(
   }
 
   // 6c. Cross-lane connectors for virtual branches
-  //     Fork: from spine commit (parent of first virtual commit) to first virtual commit
-  //     Merge: from last virtual commit to the merge commit on spine
   for (const branch of visibleVirtual) {
     const lane = branchIndex.get(branch)!;
     const displayCommits = branchDisplayCommits.get(branch) ?? [];
@@ -437,36 +436,29 @@ export function buildNetworkLayout(
     const firstKey = `${firstVirtual.oid}:${branch}`;
     const firstNode = nodeByKey.get(firstKey);
 
-    // Fork connector: find parent of first virtual commit that's on the spine
     if (firstNode) {
       for (const parentRef of firstVirtual.parents.nodes) {
         if (spine.has(parentRef.oid)) {
           const spineKey = `${parentRef.oid}:${db}`;
           const spineNode = nodeByKey.get(spineKey);
           if (spineNode) {
-            const edgeKey = `vfork:${spineKey}->${firstKey}`;
-            if (!edgeSet.has(edgeKey)) {
-              edgeSet.add(edgeKey);
-              edges.push({
-                sourceKey: spineKey, targetKey: firstKey,
-                x1: spineNode.x, y1: spineNode.y,
-                x2: firstNode.x, y2: firstNode.y,
-                color: getLaneColor(lane), isCrossLane: true,
-              });
-            }
+            addEdge(`vfork:${spineKey}->${firstKey}`, {
+              sourceKey: spineKey, targetKey: firstKey,
+              x1: spineNode.x, y1: spineNode.y,
+              x2: firstNode.x, y2: firstNode.y,
+              color: getLaneColor(lane), isCrossLane: true,
+            });
             break;
           }
         }
       }
     }
 
-    // Merge connector: find the merge commit on spine that references the last virtual commit
     const lastVirtual = displayCommits[displayCommits.length - 1]!;
     const lastKey = `${lastVirtual.oid}:${branch}`;
     const lastNode = nodeByKey.get(lastKey);
 
     if (lastNode) {
-      // Search spine for merge commit whose second parent is this commit
       for (const oid of spine) {
         const spineCommit = commitByOid.get(oid);
         if (!spineCommit || spineCommit.parents.nodes.length < 2) continue;
@@ -476,16 +468,12 @@ export function buildNetworkLayout(
             const mergeKey = `${spineCommit.oid}:${db}`;
             const mergeNode = nodeByKey.get(mergeKey);
             if (mergeNode) {
-              const edgeKey = `vmerge:${lastKey}->${mergeKey}`;
-              if (!edgeSet.has(edgeKey)) {
-                edgeSet.add(edgeKey);
-                edges.push({
-                  sourceKey: lastKey, targetKey: mergeKey,
-                  x1: lastNode.x, y1: lastNode.y,
-                  x2: mergeNode.x, y2: mergeNode.y,
-                  color: getLaneColor(lane), isCrossLane: true,
-                });
-              }
+              addEdge(`vmerge:${lastKey}->${mergeKey}`, {
+                sourceKey: lastKey, targetKey: mergeKey,
+                x1: lastNode.x, y1: lastNode.y,
+                x2: mergeNode.x, y2: mergeNode.y,
+                color: getLaneColor(lane), isCrossLane: true,
+              });
             }
           }
         }
@@ -529,19 +517,22 @@ export function buildNetworkLayout(
       }
 
       if (bestParentNode) {
-        const edgeKey = `xmerge:${bestParentNode.nodeKey}->${node.nodeKey}`;
-        if (!edgeSet.has(edgeKey)) {
-          edgeSet.add(edgeKey);
-          edges.push({
-            sourceKey: bestParentNode.nodeKey,
-            targetKey: node.nodeKey,
-            x1: bestParentNode.x,
-            y1: bestParentNode.y,
-            x2: node.x,
-            y2: node.y,
-            color: getLaneColor(bestParentNode.lane),
-            isCrossLane: true,
-          });
+        // Skip if any cross-lane edge already connects these two nodes
+        // (sections 6b/6c may have already created one with a different key prefix)
+        if (!hasCrossLanePair(bestParentNode.nodeKey, node.nodeKey)) {
+          const edgeKey = `xmerge:${bestParentNode.nodeKey}->${node.nodeKey}`;
+          if (!edgeSet.has(edgeKey)) {
+            addEdge(edgeKey, {
+              sourceKey: bestParentNode.nodeKey,
+              targetKey: node.nodeKey,
+              x1: bestParentNode.x,
+              y1: bestParentNode.y,
+              x2: node.x,
+              y2: node.y,
+              color: getLaneColor(bestParentNode.lane),
+              isCrossLane: true,
+            });
+          }
         }
       }
     }
