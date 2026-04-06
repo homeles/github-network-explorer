@@ -24,6 +24,17 @@ export interface CommitNode {
   parents: { nodes: CommitParent[] };
   additions: number;
   deletions: number;
+  associatedPullRequests?: {
+    nodes: Array<{
+      number: number;
+      title: string;
+      state: string;
+      headRefName?: string;
+      baseRefName?: string;
+      mergeCommit?: { oid: string } | null;
+      url?: string;
+    }>;
+  };
 }
 
 export interface CommitDetail extends CommitNode {
@@ -35,6 +46,9 @@ export interface CommitDetail extends CommitNode {
       title: string;
       state: string;
       url: string;
+      headRefName?: string;
+      baseRefName?: string;
+      mergeCommit?: { oid: string } | null;
     }>;
   };
   statusCheckRollup: { state: string } | null;
