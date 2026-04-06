@@ -1,5 +1,6 @@
 // Network DAG layout: horizontal timeline with branch lanes
 // Each branch gets its own Y-row, commits placed on X-axis by timestamp
+// GitHub-style: every branch shows ALL its commits, with connections at fork/merge points
 
 import type { CommitNode } from './api.js';
 
@@ -16,13 +17,15 @@ export interface NetworkNode {
   // Layout
   x: number;
   y: number;
-  branch: string; // primary branch this node is drawn on
+  branch: string; // branch this node is drawn on
   lane: number;   // row index (branch index)
+  /** Unique key for this node instance (oid may repeat across lanes) */
+  nodeKey: string;
 }
 
 export interface NetworkEdge {
-  sourceOid: string;
-  targetOid: string;
+  sourceKey: string;
+  targetKey: string;
   x1: number;
   y1: number;
   x2: number;
@@ -39,7 +42,7 @@ export interface NetworkLayout {
 }
 
 const LANE_HEIGHT = 36;
-const LANE_PADDING_TOP = 48; // space for time axis
+const LANE_PADDING_TOP = 48;
 const MIN_X_GAP = 32;
 const NODE_PADDING_LEFT = 24;
 const NODE_PADDING_RIGHT = 40;
@@ -62,12 +65,13 @@ export function getLaneColor(lane: number): string {
 /**
  * Build a horizontal network layout from commits + branchMap.
  *
- * Strategy:
- * 1. Order branches: default branch first, then alphabetical
- * 2. Assign each commit to a "primary" branch (the first branch in sorted order)
- * 3. Place commits on X-axis by timestamp (oldest=left, newest=right)
- * 4. Place commits on Y-axis by branch lane
- * 5. Build edges from parent→child across (or within) lanes
+ * Strategy (GitHub-style):
+ * 1. For each branch, collect ALL commits that belong to it (from branchMap)
+ * 2. Each branch gets its own lane — commits are placed along that lane
+ * 3. Each commit appears on EVERY branch that contains it
+ *    (but we de-emphasize shared commits on non-primary branches)
+ * 4. Edges connect parent→child within the same lane
+ * 5. Cross-lane edges connect fork/merge points between branches
  */
 export function buildNetworkLayout(
   commits: CommitNode[],
@@ -79,13 +83,16 @@ export function buildNetworkLayout(
     return { nodes: [], edges: [], branches: [], totalWidth: 0, totalHeight: 0 };
   }
 
-  // 1. Determine branch order
+  // Build commit lookup
+  const commitByOid = new Map<string, CommitNode>();
+  for (const c of commits) commitByOid.set(c.oid, c);
+
+  // 1. Determine which branches exist and are visible
   const branchSet = new Set<string>();
   for (const branches of branchMap.values()) {
     for (const b of branches) branchSet.add(b);
   }
 
-  // Filter to selected branches if provided
   const visibleBranches = selectedBranches && selectedBranches.length > 0
     ? [...branchSet].filter((b) => selectedBranches.includes(b))
     : [...branchSet];
@@ -100,88 +107,154 @@ export function buildNetworkLayout(
   const branchIndex = new Map<string, number>();
   visibleBranches.forEach((name, i) => branchIndex.set(name, i));
 
-  // 2. Assign each commit to a primary branch
-  // Primary = the visible branch with lowest index (most important first)
-  const commitPrimaryBranch = new Map<string, string>();
+  // 2. For each branch, collect its commits (from branchMap) sorted by time
+  const branchCommits = new Map<string, CommitNode[]>();
+  for (const branch of visibleBranches) {
+    branchCommits.set(branch, []);
+  }
+
   for (const commit of commits) {
     const branches = branchMap.get(commit.oid) ?? [];
-    let primary: string | null = null;
+    for (const b of branches) {
+      if (branchIndex.has(b)) {
+        branchCommits.get(b)!.push(commit);
+      }
+    }
+  }
+
+  // Sort each branch's commits oldest-first
+  for (const [, arr] of branchCommits) {
+    arr.sort(
+      (a, b) => new Date(a.committedDate).getTime() - new Date(b.committedDate).getTime()
+    );
+  }
+
+  // 3. Determine "primary branch" for each commit (for edge coloring & emphasis)
+  //    Primary = the branch with the highest index where this commit is the
+  //    most "specific" to that branch. If a commit exists on main + feature,
+  //    and it's NOT the tip area of the feature, it's primary=main.
+  //    Simple heuristic: primary = branch with lowest index that contains it.
+  const commitPrimary = new Map<string, string>();
+  for (const commit of commits) {
+    const branches = branchMap.get(commit.oid) ?? [];
+    let best: string | null = null;
     let bestIdx = Infinity;
     for (const b of branches) {
       const idx = branchIndex.get(b);
       if (idx !== undefined && idx < bestIdx) {
         bestIdx = idx;
-        primary = b;
+        best = b;
       }
     }
-    if (primary) {
-      commitPrimaryBranch.set(commit.oid, primary);
+    if (best) commitPrimary.set(commit.oid, best);
+  }
+
+  // 4. Build global X positions based on timestamp order
+  //    All unique commits sorted by time, each gets an x slot
+  const allSorted = [...commits].sort(
+    (a, b) => new Date(a.committedDate).getTime() - new Date(b.committedDate).getTime()
+  );
+  const xPositions = new Map<string, number>();
+  allSorted.forEach((c, i) => {
+    if (!xPositions.has(c.oid)) {
+      xPositions.set(c.oid, NODE_PADDING_LEFT + i * MIN_X_GAP);
+    }
+  });
+
+  const maxX = allSorted.length > 0
+    ? NODE_PADDING_LEFT + (allSorted.length - 1) * MIN_X_GAP
+    : NODE_PADDING_LEFT;
+  const totalWidth = maxX + NODE_PADDING_RIGHT;
+  const totalHeight = LANE_PADDING_TOP + visibleBranches.length * LANE_HEIGHT + 16;
+
+  // 5. Build nodes — one per (commit, branch) pair
+  //    Only show a commit on a branch if the commit belongs to that branch
+  const nodes: NetworkNode[] = [];
+  const nodeByKey = new Map<string, NetworkNode>(); // key = "oid:branch"
+
+  for (const branch of visibleBranches) {
+    const lane = branchIndex.get(branch)!;
+    const bCommits = branchCommits.get(branch) ?? [];
+
+    for (const commit of bCommits) {
+      const key = `${commit.oid}:${branch}`;
+      const node: NetworkNode = {
+        oid: commit.oid,
+        abbreviatedOid: commit.abbreviatedOid,
+        message: commit.message,
+        committedDate: commit.committedDate,
+        author: commit.author,
+        parents: commit.parents,
+        additions: commit.additions,
+        deletions: commit.deletions,
+        isMerge: commit.parents.nodes.length > 1,
+        x: xPositions.get(commit.oid) ?? 0,
+        y: LANE_PADDING_TOP + lane * LANE_HEIGHT + LANE_HEIGHT / 2,
+        branch,
+        lane,
+        nodeKey: key,
+      };
+      nodes.push(node);
+      nodeByKey.set(key, node);
     }
   }
 
-  // 3. Filter commits that belong to at least one visible branch
-  const visibleCommits = commits.filter((c) => commitPrimaryBranch.has(c.oid));
-
-  if (visibleCommits.length === 0) {
-    return { nodes: [], edges: [], branches: visibleBranches, totalWidth: 0, totalHeight: 0 };
-  }
-
-  // 4. Sort by timestamp (oldest first for left-to-right)
-  const sorted = [...visibleCommits].sort(
-    (a, b) => new Date(a.committedDate).getTime() - new Date(b.committedDate).getTime()
-  );
-
-  // 5. Assign X positions — evenly spaced to avoid overlap
-  //    Group commits by their primary branch, and within each branch lane,
-  //    order by timestamp. Use global timestamp order for x position.
-  const xPositions = new Map<string, number>();
-  sorted.forEach((c, i) => {
-    xPositions.set(c.oid, NODE_PADDING_LEFT + i * MIN_X_GAP);
-  });
-
-  const totalWidth = NODE_PADDING_LEFT + (sorted.length - 1) * MIN_X_GAP + NODE_PADDING_RIGHT;
-  const totalHeight = LANE_PADDING_TOP + visibleBranches.length * LANE_HEIGHT + 16;
-
-  // 6. Build nodes
-  const nodes: NetworkNode[] = sorted.map((commit) => {
-    const primary = commitPrimaryBranch.get(commit.oid)!;
-    const lane = branchIndex.get(primary) ?? 0;
-    return {
-      oid: commit.oid,
-      abbreviatedOid: commit.abbreviatedOid,
-      message: commit.message,
-      committedDate: commit.committedDate,
-      author: commit.author,
-      parents: commit.parents,
-      additions: commit.additions,
-      deletions: commit.deletions,
-      isMerge: commit.parents.nodes.length > 1,
-      x: xPositions.get(commit.oid)!,
-      y: LANE_PADDING_TOP + lane * LANE_HEIGHT + LANE_HEIGHT / 2,
-      branch: primary,
-      lane,
-    };
-  });
-
-  const nodeMap = new Map<string, NetworkNode>();
-  for (const n of nodes) nodeMap.set(n.oid, n);
-
-  // 7. Build edges
+  // 6. Build edges
+  //    For each node, connect to its parent(s):
+  //    - If parent exists on same branch → same-lane edge
+  //    - If parent exists on different branch → cross-lane edge (fork/merge)
   const edges: NetworkEdge[] = [];
-  for (const node of nodes) {
-    for (const parentRef of node.parents.nodes) {
-      const parent = nodeMap.get(parentRef.oid);
-      if (!parent) continue;
+  const edgeSet = new Set<string>(); // deduplicate
 
-      edges.push({
-        sourceOid: node.oid,
-        targetOid: parent.oid,
-        x1: node.x,
-        y1: node.y,
-        x2: parent.x,
-        y2: parent.y,
-        color: getLaneColor(node.lane),
-      });
+  for (const node of nodes) {
+    const branch = node.branch;
+    const lane = node.lane;
+
+    for (const parentRef of node.parents.nodes) {
+      const parentOid = parentRef.oid;
+
+      // Try same-branch connection first
+      const sameBranchKey = `${parentOid}:${branch}`;
+      const parentSameBranch = nodeByKey.get(sameBranchKey);
+
+      if (parentSameBranch) {
+        const edgeKey = `${node.nodeKey}->${sameBranchKey}`;
+        if (!edgeSet.has(edgeKey)) {
+          edgeSet.add(edgeKey);
+          edges.push({
+            sourceKey: node.nodeKey,
+            targetKey: sameBranchKey,
+            x1: node.x,
+            y1: node.y,
+            x2: parentSameBranch.x,
+            y2: parentSameBranch.y,
+            color: getLaneColor(lane),
+          });
+        }
+      } else {
+        // Parent not on this branch — find it on another branch (cross-lane)
+        // Pick the primary branch for the parent
+        const parentPrimary = commitPrimary.get(parentOid);
+        if (parentPrimary) {
+          const crossKey = `${parentOid}:${parentPrimary}`;
+          const parentNode = nodeByKey.get(crossKey);
+          if (parentNode) {
+            const edgeKey = `${node.nodeKey}->${crossKey}`;
+            if (!edgeSet.has(edgeKey)) {
+              edgeSet.add(edgeKey);
+              edges.push({
+                sourceKey: node.nodeKey,
+                targetKey: crossKey,
+                x1: node.x,
+                y1: node.y,
+                x2: parentNode.x,
+                y2: parentNode.y,
+                color: getLaneColor(lane),
+              });
+            }
+          }
+        }
+      }
     }
   }
 
