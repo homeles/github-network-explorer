@@ -371,17 +371,24 @@ export function buildNetworkLayout(
   }
 
   // 6b. Cross-lane connectors for live non-default branches
+  //     Only draw a fork connector if the branch genuinely forks from default
+  //     (i.e., the first displayed commit is a shared spine commit and the
+  //     branch has unique commits after it). Skip for long-lived branches
+  //     that have sync merges — those are handled by 6d.
   for (const branch of visibleLive) {
     if (branch === db) continue;
     const lane = branchIndex.get(branch)!;
     const displayCommits = branchDisplayCommits.get(branch) ?? [];
-    if (displayCommits.length === 0) continue;
+    if (displayCommits.length < 2) continue; // Need at least fork point + 1 unique commit
 
     const firstCommit = displayCommits[0]!;
+    const secondCommit = displayCommits[1]!;
     const firstKey = `${firstCommit.oid}:${branch}`;
     const firstNode = nodeByKey.get(firstKey);
 
-    if (firstNode && spine.has(firstCommit.oid)) {
+    // Only draw fork if: first commit is on spine AND second commit is NOT on spine
+    // This means the branch genuinely diverges at this point
+    if (firstNode && spine.has(firstCommit.oid) && !spine.has(secondCommit.oid)) {
       const defaultKey = `${firstCommit.oid}:${db}`;
       const defaultNode = nodeByKey.get(defaultKey);
       if (defaultNode) {
@@ -396,7 +403,8 @@ export function buildNetworkLayout(
           });
         }
       }
-    } else if (firstNode) {
+    } else if (firstNode && !spine.has(firstCommit.oid)) {
+      // First unique commit — connect from parent on default branch
       for (const parentRef of firstCommit.parents.nodes) {
         const parentDefaultKey = `${parentRef.oid}:${db}`;
         const parentNode = nodeByKey.get(parentDefaultKey);
