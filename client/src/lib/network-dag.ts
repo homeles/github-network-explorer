@@ -486,36 +486,54 @@ export function buildNetworkLayout(
   }
 
   // 6d. Generic cross-branch merge connectors
-  //     For ANY merge commit on ANY branch, if a parent commit exists on a
-  //     different branch's displayed nodes, draw a cross-lane connection.
-  //     This handles "sync merges" like merging main into demo.
+  //     For merge commits, connect NON-FIRST parents to their branch.
+  //     First parent = same branch continuation (handled by 6a).
+  //     Non-first parents = incoming merges from other branches.
+  //     Only draw if this edge wasn't already created by 6b/6c.
+  //     Prefer connecting to the most specific branch (virtual > live non-default).
   for (const node of nodes) {
     if (!node.isMerge) continue;
 
-    for (const parentRef of node.parents.nodes) {
-      const parentOid = parentRef.oid;
+    // Only process non-first parents (the merged-in branches)
+    for (let p = 1; p < node.parents.nodes.length; p++) {
+      const parentOid = node.parents.nodes[p]!.oid;
 
-      // Check if this parent exists as a displayed node on a different branch
+      // Find the best branch to connect to for this parent:
+      // Priority: same virtual branch > other virtual branch > live non-default > default
+      let bestParentNode: NetworkNode | null = null;
+      let bestPriority = -1;
+
       for (const otherBranch of allBranches) {
         if (otherBranch === node.branch) continue;
         const parentKey = `${parentOid}:${otherBranch}`;
         const parentNode = nodeByKey.get(parentKey);
-        if (parentNode) {
-          const edgeKey = `xmerge:${parentNode.nodeKey}->${node.nodeKey}`;
-          if (!edgeSet.has(edgeKey)) {
-            edgeSet.add(edgeKey);
-            edges.push({
-              sourceKey: parentNode.nodeKey,
-              targetKey: node.nodeKey,
-              x1: parentNode.x,
-              y1: parentNode.y,
-              x2: node.x,
-              y2: node.y,
-              color: getLaneColor(node.lane),
-              isCrossLane: true,
-            });
-          }
-          break; // Only need one connection per parent
+        if (!parentNode) continue;
+
+        let priority = 0;
+        if (virtualBranchNames.has(otherBranch)) priority = 3;
+        else if (otherBranch !== db) priority = 2;
+        else priority = 1;
+
+        if (priority > bestPriority) {
+          bestPriority = priority;
+          bestParentNode = parentNode;
+        }
+      }
+
+      if (bestParentNode) {
+        const edgeKey = `xmerge:${bestParentNode.nodeKey}->${node.nodeKey}`;
+        if (!edgeSet.has(edgeKey)) {
+          edgeSet.add(edgeKey);
+          edges.push({
+            sourceKey: bestParentNode.nodeKey,
+            targetKey: node.nodeKey,
+            x1: bestParentNode.x,
+            y1: bestParentNode.y,
+            x2: node.x,
+            y2: node.y,
+            color: getLaneColor(bestParentNode.lane),
+            isCrossLane: true,
+          });
         }
       }
     }
