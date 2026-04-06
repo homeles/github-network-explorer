@@ -482,13 +482,13 @@ export function buildNetworkLayout(
   }
 
   // 6d. Generic cross-branch merge connectors
-  //     Only process merge commits on their PRIMARY displayed branch to avoid
-  //     drawing duplicate arrows when the same merge commit appears on multiple
-  //     branches (e.g., a merge on main that's also reachable from demo).
+  //     Only for LIVE branches — virtual branches already have connectors from 6c.
+  //     Only process non-first parents of merge commits.
   const processedMergeOids = new Set<string>();
   for (const node of nodes) {
     if (!node.isMerge) continue;
-
+    // Skip virtual branches — their connections are handled by 6c
+    if (node.isVirtualBranch) continue;
     // Skip if we already processed this merge commit OID on another branch
     if (processedMergeOids.has(node.oid)) continue;
     processedMergeOids.add(node.oid);
