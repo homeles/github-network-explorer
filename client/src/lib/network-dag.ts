@@ -200,20 +200,16 @@ export function buildNetworkLayout(
   }
 
   // 6. Build edges
-  //    For each node, connect to its parent(s):
-  //    - If parent exists on same branch → same-lane edge
-  //    - If parent exists on different branch → cross-lane edge (fork/merge)
   const edges: NetworkEdge[] = [];
-  const edgeSet = new Set<string>(); // deduplicate
+  const edgeSet = new Set<string>();
 
+  // 6a. Within-branch edges: connect each node to its parent on the same branch
   for (const node of nodes) {
     const branch = node.branch;
     const lane = node.lane;
 
     for (const parentRef of node.parents.nodes) {
       const parentOid = parentRef.oid;
-
-      // Try same-branch connection first
       const sameBranchKey = `${parentOid}:${branch}`;
       const parentSameBranch = nodeByKey.get(sameBranchKey);
 
@@ -232,8 +228,7 @@ export function buildNetworkLayout(
           });
         }
       } else {
-        // Parent not on this branch — find it on another branch (cross-lane)
-        // Pick the primary branch for the parent
+        // Parent not on this branch — cross-lane edge
         const parentPrimary = commitPrimary.get(parentOid);
         if (parentPrimary) {
           const crossKey = `${parentOid}:${parentPrimary}`;
@@ -253,6 +248,109 @@ export function buildNetworkLayout(
               });
             }
           }
+        }
+      }
+    }
+  }
+
+  // 6b. Fork/merge connectors between branches
+  //     For each branch, find where it diverges from / merges into other branches.
+  //     - Fork point: first commit on a non-default branch that also exists on
+  //       another branch → draw connector from the other branch's instance to this one
+  //     - Merge point: a merge commit on one branch whose second+ parents are on
+  //       a different branch → draw connector between the lanes
+  //
+  //     Simpler approach: for each commit that appears on multiple branches,
+  //     connect its instances across lanes. This creates the visual fork/merge lines.
+  const commitToBranchNodes = new Map<string, NetworkNode[]>();
+  for (const node of nodes) {
+    const arr = commitToBranchNodes.get(node.oid) ?? [];
+    arr.push(node);
+    commitToBranchNodes.set(node.oid, arr);
+  }
+
+  // For fork points: find the FIRST commit on each non-default branch.
+  // That commit also exists on the parent branch → connect them.
+  for (const branch of visibleBranches) {
+    if (branch === defaultBranch) continue;
+    const bCommits = branchCommits.get(branch) ?? [];
+    if (bCommits.length === 0) continue;
+
+    // The first commit on this branch (oldest)
+    const firstCommit = bCommits[0]!;
+    const instances = commitToBranchNodes.get(firstCommit.oid) ?? [];
+
+    // Find the instance on this branch
+    const thisNode = instances.find((n) => n.branch === branch);
+    if (!thisNode) continue;
+
+    // Connect from another branch's instance to this branch (fork line)
+    for (const otherNode of instances) {
+      if (otherNode.branch === branch) continue;
+      const edgeKey = `fork:${otherNode.nodeKey}->${thisNode.nodeKey}`;
+      if (!edgeSet.has(edgeKey)) {
+        edgeSet.add(edgeKey);
+        edges.push({
+          sourceKey: otherNode.nodeKey,
+          targetKey: thisNode.nodeKey,
+          x1: otherNode.x,
+          y1: otherNode.y,
+          x2: thisNode.x,
+          y2: thisNode.y,
+          color: getLaneColor(thisNode.lane),
+        });
+      }
+    }
+
+    // The last commit on this branch (newest) — potential merge back
+    const lastCommit = bCommits[bCommits.length - 1]!;
+    if (lastCommit.oid === firstCommit.oid) continue; // single-commit branch
+
+    const lastInstances = commitToBranchNodes.get(lastCommit.oid) ?? [];
+    const lastThisNode = lastInstances.find((n) => n.branch === branch);
+    if (!lastThisNode) continue;
+
+    for (const otherNode of lastInstances) {
+      if (otherNode.branch === branch) continue;
+      const edgeKey = `merge:${lastThisNode.nodeKey}->${otherNode.nodeKey}`;
+      if (!edgeSet.has(edgeKey)) {
+        edgeSet.add(edgeKey);
+        edges.push({
+          sourceKey: lastThisNode.nodeKey,
+          targetKey: otherNode.nodeKey,
+          x1: lastThisNode.x,
+          y1: lastThisNode.y,
+          x2: otherNode.x,
+          y2: otherNode.y,
+          color: getLaneColor(lastThisNode.lane),
+        });
+      }
+    }
+  }
+
+  // 6c. Merge commit cross-lane connectors
+  //     For merge commits (>1 parent), if parents are on different branches,
+  //     connect across lanes
+  for (const node of nodes) {
+    if (!node.isMerge) continue;
+    for (let p = 1; p < node.parents.nodes.length; p++) {
+      const parentOid = node.parents.nodes[p]!.oid;
+      // Find parent on a DIFFERENT branch than this node
+      const parentInstances = commitToBranchNodes.get(parentOid) ?? [];
+      for (const parentNode of parentInstances) {
+        if (parentNode.branch === node.branch) continue;
+        const edgeKey = `xmerge:${node.nodeKey}->${parentNode.nodeKey}`;
+        if (!edgeSet.has(edgeKey)) {
+          edgeSet.add(edgeKey);
+          edges.push({
+            sourceKey: node.nodeKey,
+            targetKey: parentNode.nodeKey,
+            x1: node.x,
+            y1: node.y,
+            x2: parentNode.x,
+            y2: parentNode.y,
+            color: getLaneColor(parentNode.lane),
+          });
         }
       }
     }

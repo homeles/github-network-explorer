@@ -9,6 +9,11 @@ const LANE_HEIGHT = 36;
 const LANE_PADDING_TOP = 48;
 const BRANCH_LABEL_WIDTH = 160;
 
+const LANE_COLORS = [
+  '#58a6ff', '#3fb950', '#bc8cff', '#d29922',
+  '#f85149', '#39d353', '#ff7b72', '#79c0ff',
+];
+
 function formatFullDate(iso: string): string {
   return new Date(iso).toLocaleString('en-US', {
     month: 'short',
@@ -137,11 +142,35 @@ export default function NetworkGraphVisualization({
 
     // Draw edges
     const edgeGroup = g.append('g').attr('class', 'edges');
+
+    // Define arrowhead markers for cross-lane edges
+    const defs = d3svg.append('defs');
+    for (let i = 0; i < LANE_COLORS.length; i++) {
+      const color = getLaneColor(i);
+      defs
+        .append('marker')
+        .attr('id', `arrow-${i}`)
+        .attr('viewBox', '0 0 10 10')
+        .attr('refX', 8)
+        .attr('refY', 5)
+        .attr('markerWidth', 6)
+        .attr('markerHeight', 6)
+        .attr('orient', 'auto-start-reverse')
+        .append('path')
+        .attr('d', 'M 0 0 L 10 5 L 0 10 Z')
+        .attr('fill', color);
+    }
+
     for (const edge of layout.edges) {
       const { x1, y1, x2, y2, color } = edge;
+      const isCrossLane = y1 !== y2;
+
+      // Figure out lane index for arrow marker
+      const laneIdx = LANE_COLORS.indexOf(color);
+      const markerIdx = laneIdx >= 0 ? laneIdx : 0;
 
       let d: string;
-      if (y1 === y2) {
+      if (!isCrossLane) {
         // Same lane — straight line
         d = `M ${x1} ${y1} L ${x2} ${y2}`;
       } else {
@@ -150,13 +179,18 @@ export default function NetworkGraphVisualization({
         d = `M ${x1} ${y1} C ${midX} ${y1}, ${midX} ${y2}, ${x2} ${y2}`;
       }
 
-      edgeGroup
+      const path = edgeGroup
         .append('path')
         .attr('d', d)
         .attr('fill', 'none')
         .attr('stroke', color)
-        .attr('stroke-width', 2)
-        .attr('stroke-opacity', 0.5);
+        .attr('stroke-width', isCrossLane ? 2.5 : 1.5)
+        .attr('stroke-opacity', isCrossLane ? 0.7 : 0.5);
+
+      // Add arrowhead to cross-lane edges
+      if (isCrossLane) {
+        path.attr('marker-end', `url(#arrow-${markerIdx})`);
+      }
     }
 
     // Draw nodes
