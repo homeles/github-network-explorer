@@ -134,11 +134,6 @@ function reconstructDeletedBranches(
       if (processedParents.has(tipOid)) continue;
       processedParents.add(tipOid);
 
-      // Check if this tip is already on a live non-default branch
-      const tipBranches = branchMap.get(tipOid) ?? [];
-      const hasLiveNonDefault = tipBranches.some((b) => b !== defaultBranch);
-      if (hasLiveNonDefault) continue;
-
       // Get branch name from PR data
       const prs = commit.associatedPullRequests?.nodes ?? [];
       const mergedPr = prs.find(
