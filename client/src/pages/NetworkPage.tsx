@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useParams } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import { useMultiBranchCommits, useCommitDetail } from '../hooks/useCommits.js';
@@ -7,10 +7,36 @@ import NetworkGraphVisualization from '../components/NetworkGraphVisualization.j
 import CommitDetail from '../components/CommitDetail.js';
 import BranchSelector from '../components/BranchSelector.js';
 
+type TimeRange = '1w' | '2w' | '1m' | '6m' | '1y' | 'all';
+
+const TIME_RANGE_OPTIONS: { value: TimeRange; label: string }[] = [
+  { value: '1w', label: 'Last week' },
+  { value: '2w', label: 'Last 2 weeks' },
+  { value: '1m', label: 'Last month' },
+  { value: '6m', label: 'Last 6 months' },
+  { value: '1y', label: 'Last year' },
+  { value: 'all', label: 'All time' },
+];
+
+function getTimeRangeCutoff(range: TimeRange): Date | null {
+  if (range === 'all') return null;
+  const now = new Date();
+  switch (range) {
+    case '1w': now.setDate(now.getDate() - 7); break;
+    case '2w': now.setDate(now.getDate() - 14); break;
+    case '1m': now.setMonth(now.getMonth() - 1); break;
+    case '6m': now.setMonth(now.getMonth() - 6); break;
+    case '1y': now.setFullYear(now.getFullYear() - 1); break;
+  }
+  return now;
+}
+
 export default function NetworkPage() {
   const { owner, repo } = useParams<{ owner: string; repo: string }>();
   const [selectedBranches, setSelectedBranches] = useState<string[]>([]);
   const [selectedOid, setSelectedOid] = useState<string | null>(null);
+  const [timeRange, setTimeRange] = useState<TimeRange>('1w');
+  const [showTimeDropdown, setShowTimeDropdown] = useState(false);
 
   const { data: overview, isLoading: overviewLoading } = useQuery({
     queryKey: ['overview', owner, repo],
@@ -21,13 +47,11 @@ export default function NetworkPage() {
   const defaultBranch = overview?.defaultBranchRef?.name ?? 'main';
   const allBranchNames = overview?.branches.map((b) => b.name) ?? [];
 
-  // Reset when repo changes
   useEffect(() => {
     setSelectedBranches([]);
     setSelectedOid(null);
   }, [owner, repo]);
 
-  // Auto-select ALL branches once overview loads
   useEffect(() => {
     if (overview && selectedBranches.length === 0 && allBranchNames.length > 0) {
       setSelectedBranches([...allBranchNames]);
@@ -56,11 +80,35 @@ export default function NetworkPage() {
     !!owner && !!repo && effectiveBranches.length > 0
   );
 
+  // Filter commits by time range
+  const { filteredCommits, filteredBranchMap } = useMemo(() => {
+    const cutoff = getTimeRangeCutoff(timeRange);
+    if (!cutoff) return { filteredCommits: commits, filteredBranchMap: branchMap };
+
+    const cutoffTime = cutoff.getTime();
+    const filtered = commits.filter(
+      (c) => new Date(c.committedDate).getTime() >= cutoffTime
+    );
+    const filteredOids = new Set(filtered.map((c) => c.oid));
+
+    // Rebuild branchMap with only filtered commits
+    const newMap = new Map<string, string[]>();
+    for (const [oid, branches] of branchMap) {
+      if (filteredOids.has(oid)) {
+        newMap.set(oid, branches);
+      }
+    }
+
+    return { filteredCommits: filtered, filteredBranchMap: newMap };
+  }, [commits, branchMap, timeRange]);
+
   const { commit: commitDetail, isLoading: detailLoading } = useCommitDetail(
     owner!,
     repo!,
     selectedOid
   );
+
+  const currentLabel = TIME_RANGE_OPTIONS.find((o) => o.value === timeRange)?.label ?? 'Last week';
 
   if (!owner || !repo) {
     return (
@@ -115,13 +163,101 @@ export default function NetworkPage() {
           />
         </div>
 
-        {/* View label */}
+        {/* Time range selector */}
+        <div style={{ position: 'relative' }}>
+          <button
+            onClick={() => setShowTimeDropdown((v) => !v)}
+            style={{
+              background: '#0d1117',
+              border: '1px solid #30363d',
+              borderRadius: 6,
+              color: '#dfe2eb',
+              padding: '0.25rem 0.625rem',
+              fontSize: '0.875rem',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.375rem',
+              minWidth: 130,
+            }}
+          >
+            <span style={{ color: '#8b949e', fontSize: '0.75rem' }}>🕐</span>
+            <span style={{ flex: 1, textAlign: 'left' }}>{currentLabel}</span>
+            <span style={{ color: '#8b949e', fontSize: '0.6875rem' }}>
+              {showTimeDropdown ? '▲' : '▼'}
+            </span>
+          </button>
+
+          {showTimeDropdown && (
+            <>
+              <div
+                style={{
+                  position: 'fixed',
+                  inset: 0,
+                  zIndex: 49,
+                }}
+                onClick={() => setShowTimeDropdown(false)}
+              />
+              <div
+                style={{
+                  position: 'absolute',
+                  top: 'calc(100% + 4px)',
+                  left: 0,
+                  zIndex: 50,
+                  background: '#161b22',
+                  border: '1px solid #30363d',
+                  borderRadius: 6,
+                  minWidth: 160,
+                  boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
+                  overflow: 'hidden',
+                }}
+              >
+                {TIME_RANGE_OPTIONS.map((opt) => (
+                  <button
+                    key={opt.value}
+                    onClick={() => {
+                      setTimeRange(opt.value);
+                      setShowTimeDropdown(false);
+                      setSelectedOid(null);
+                    }}
+                    style={{
+                      width: '100%',
+                      padding: '0.5rem 0.75rem',
+                      background: opt.value === timeRange ? '#1f2937' : 'transparent',
+                      border: 'none',
+                      color: opt.value === timeRange ? '#58a6ff' : '#dfe2eb',
+                      cursor: 'pointer',
+                      textAlign: 'left',
+                      fontSize: '0.875rem',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.5rem',
+                    }}
+                    onMouseOver={(e) => {
+                      (e.currentTarget as HTMLButtonElement).style.background = '#1f2937';
+                    }}
+                    onMouseOut={(e) => {
+                      (e.currentTarget as HTMLButtonElement).style.background =
+                        opt.value === timeRange ? '#1f2937' : 'transparent';
+                    }}
+                  >
+                    {opt.value === timeRange && (
+                      <span style={{ color: '#58a6ff', fontSize: '0.75rem' }}>✓</span>
+                    )}
+                    <span>{opt.label}</span>
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+
+        {/* View label + commit count */}
         <div
           style={{
             display: 'flex',
             alignItems: 'center',
             gap: '0.375rem',
-            marginLeft: '0.5rem',
             background: 'rgba(88,166,255,0.1)',
             border: '1px solid rgba(88,166,255,0.2)',
             borderRadius: 12,
@@ -132,6 +268,11 @@ export default function NetworkPage() {
           }}
         >
           🔀 Network View
+          {filteredCommits.length > 0 && (
+            <span style={{ color: '#8b949e', fontWeight: 400 }}>
+              · {filteredCommits.length} commits
+            </span>
+          )}
         </div>
 
         {overview && (
@@ -223,18 +364,49 @@ export default function NetworkPage() {
           )}
 
           {/* Network graph */}
-          {!overviewLoading && !commitsLoading && commits.length > 0 && (
+          {!overviewLoading && !commitsLoading && filteredCommits.length > 0 && (
             <NetworkGraphVisualization
-              commits={commits}
+              commits={filteredCommits}
               selectedOid={selectedOid}
               onSelectCommit={setSelectedOid}
-              branchMap={branchMap}
+              branchMap={filteredBranchMap}
               defaultBranch={defaultBranch}
               selectedBranches={effectiveBranches}
             />
           )}
 
           {/* Empty */}
+          {!commitsLoading && !error && filteredCommits.length === 0 && commits.length > 0 && (
+            <div
+              style={{
+                height: '100%',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexDirection: 'column',
+                gap: '0.75rem',
+                color: '#8b949e',
+                fontSize: '0.875rem',
+              }}
+            >
+              <span>No commits in the selected time range</span>
+              <button
+                onClick={() => setTimeRange('all')}
+                style={{
+                  background: '#161b22',
+                  border: '1px solid #30363d',
+                  borderRadius: 6,
+                  color: '#58a6ff',
+                  padding: '0.375rem 0.75rem',
+                  fontSize: '0.8125rem',
+                  cursor: 'pointer',
+                }}
+              >
+                Show all time
+              </button>
+            </div>
+          )}
+
           {!commitsLoading && !error && commits.length === 0 && (
             <div
               style={{
@@ -251,7 +423,7 @@ export default function NetworkPage() {
           )}
 
           {/* Load more */}
-          {hasNextPage && commits.length > 0 && (
+          {hasNextPage && filteredCommits.length > 0 && (
             <div
               style={{
                 position: 'absolute',
@@ -304,7 +476,7 @@ export default function NetworkPage() {
                 onClose={() => setSelectedOid(null)}
                 owner={owner}
                 repo={repo}
-                branches={selectedOid ? branchMap.get(selectedOid) : undefined}
+                branches={selectedOid ? filteredBranchMap.get(selectedOid) : undefined}
               />
             ) : null}
           </div>
