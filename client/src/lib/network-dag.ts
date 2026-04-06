@@ -501,20 +501,23 @@ export function buildNetworkLayout(
   }
 
   // 6d. Generic cross-branch merge connectors
-  //     Only for LIVE branches — virtual branches already have connectors from 6c.
-  //     Only process non-first parents of merge commits.
+  //     For merge commits on LIVE branches: connect non-first parents across lanes.
+  //     For merge commits on VIRTUAL branches: only connect non-first parents
+  //     that are on the SPINE (sync merges from main into feature branch).
   const processedMergeOids = new Set<string>();
   for (const node of nodes) {
     if (!node.isMerge) continue;
-    // Skip virtual branches — their connections are handled by 6c
-    if (node.isVirtualBranch) continue;
-    // Skip if we already processed this merge commit OID on another branch
     if (processedMergeOids.has(node.oid)) continue;
     processedMergeOids.add(node.oid);
 
     // Only process non-first parents (the merged-in branches)
     for (let p = 1; p < node.parents.nodes.length; p++) {
       const parentOid = node.parents.nodes[p]!.oid;
+
+      // For virtual branches: only draw cross-lane edges to spine commits
+      // (sync merges from main into feature). Skip non-spine parents to
+      // avoid duplicate arrows (6c already handles fork/merge-back to spine).
+      if (node.isVirtualBranch && !spine.has(parentOid)) continue;
 
       // Find the best branch to connect to for this parent:
       // Priority: same virtual branch > other virtual branch > live non-default > default
