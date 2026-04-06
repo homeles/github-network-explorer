@@ -482,13 +482,16 @@ export function buildNetworkLayout(
   }
 
   // 6d. Generic cross-branch merge connectors
-  //     For merge commits, connect NON-FIRST parents to their branch.
-  //     First parent = same branch continuation (handled by 6a).
-  //     Non-first parents = incoming merges from other branches.
-  //     Only draw if this edge wasn't already created by 6b/6c.
-  //     Prefer connecting to the most specific branch (virtual > live non-default).
+  //     Only process merge commits on their PRIMARY displayed branch to avoid
+  //     drawing duplicate arrows when the same merge commit appears on multiple
+  //     branches (e.g., a merge on main that's also reachable from demo).
+  const processedMergeOids = new Set<string>();
   for (const node of nodes) {
     if (!node.isMerge) continue;
+
+    // Skip if we already processed this merge commit OID on another branch
+    if (processedMergeOids.has(node.oid)) continue;
+    processedMergeOids.add(node.oid);
 
     // Only process non-first parents (the merged-in branches)
     for (let p = 1; p < node.parents.nodes.length; p++) {
