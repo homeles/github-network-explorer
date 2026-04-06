@@ -485,6 +485,42 @@ export function buildNetworkLayout(
     }
   }
 
+  // 6d. Generic cross-branch merge connectors
+  //     For ANY merge commit on ANY branch, if a parent commit exists on a
+  //     different branch's displayed nodes, draw a cross-lane connection.
+  //     This handles "sync merges" like merging main into demo.
+  for (const node of nodes) {
+    if (!node.isMerge) continue;
+
+    for (const parentRef of node.parents.nodes) {
+      const parentOid = parentRef.oid;
+
+      // Check if this parent exists as a displayed node on a different branch
+      for (const otherBranch of allBranches) {
+        if (otherBranch === node.branch) continue;
+        const parentKey = `${parentOid}:${otherBranch}`;
+        const parentNode = nodeByKey.get(parentKey);
+        if (parentNode) {
+          const edgeKey = `xmerge:${parentNode.nodeKey}->${node.nodeKey}`;
+          if (!edgeSet.has(edgeKey)) {
+            edgeSet.add(edgeKey);
+            edges.push({
+              sourceKey: parentNode.nodeKey,
+              targetKey: node.nodeKey,
+              x1: parentNode.x,
+              y1: parentNode.y,
+              x2: node.x,
+              y2: node.y,
+              color: getLaneColor(node.lane),
+              isCrossLane: true,
+            });
+          }
+          break; // Only need one connection per parent
+        }
+      }
+    }
+  }
+
   return {
     nodes,
     edges,
