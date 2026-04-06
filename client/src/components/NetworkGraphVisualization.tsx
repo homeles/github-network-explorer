@@ -115,6 +115,7 @@ export default function NetworkGraphVisualization({
     for (let i = 0; i < layout.branches.length; i++) {
       const laneY = LANE_PADDING_TOP + i * LANE_HEIGHT;
       const color = getLaneColor(i);
+      const isVirtual = layout.virtualBranches.has(layout.branches[i]!);
 
       // Lane background stripe (alternating subtle)
       if (i % 2 === 1) {
@@ -127,8 +128,8 @@ export default function NetworkGraphVisualization({
           .attr('fill', 'rgba(255,255,255,0.02)');
       }
 
-      // Lane line (thin horizontal)
-      lanesGroup
+      // Lane line
+      const line = lanesGroup
         .append('line')
         .attr('x1', -10000)
         .attr('y1', laneY + LANE_HEIGHT / 2)
@@ -136,7 +137,11 @@ export default function NetworkGraphVisualization({
         .attr('y2', laneY + LANE_HEIGHT / 2)
         .attr('stroke', color)
         .attr('stroke-width', 1.5)
-        .attr('stroke-opacity', 0.2);
+        .attr('stroke-opacity', isVirtual ? 0.12 : 0.2);
+
+      if (isVirtual) {
+        line.attr('stroke-dasharray', '4,4');
+      }
     }
 
     // Draw edges
@@ -383,6 +388,7 @@ export default function NetworkGraphVisualization({
           {layout.branches.map((name, i) => {
             const color = getLaneColor(i);
             const laneY = LANE_PADDING_TOP + i * LANE_HEIGHT;
+            const isVirtual = layout.virtualBranches.has(name);
             return (
               <div
                 key={name}
@@ -403,26 +409,41 @@ export default function NetworkGraphVisualization({
                     width: 10,
                     height: 10,
                     borderRadius: '50%',
-                    background: color,
+                    background: isVirtual ? 'transparent' : color,
+                    border: `2px solid ${color}${isVirtual ? '88' : '66'}`,
                     flexShrink: 0,
-                    border: `2px solid ${color}66`,
                   }}
                 />
                 <span
                   style={{
-                    color: '#dfe2eb',
+                    color: isVirtual ? '#8b949e' : '#dfe2eb',
                     fontSize: '0.8125rem',
                     fontFamily: "'JetBrains Mono', 'SF Mono', Monaco, monospace",
-                    fontWeight: 500,
+                    fontWeight: isVirtual ? 400 : 500,
+                    fontStyle: isVirtual ? 'italic' : 'normal',
                     overflow: 'hidden',
                     textOverflow: 'ellipsis',
                     whiteSpace: 'nowrap',
                     lineHeight: 1.2,
                   }}
-                  title={name}
+                  title={isVirtual ? `${name} (deleted)` : name}
                 >
                   {name}
                 </span>
+                {isVirtual && (
+                  <span
+                    style={{
+                      fontSize: '0.625rem',
+                      color: '#6e7681',
+                      background: '#21262d',
+                      borderRadius: 4,
+                      padding: '1px 4px',
+                      flexShrink: 0,
+                    }}
+                  >
+                    merged
+                  </span>
+                )}
               </div>
             );
           })}

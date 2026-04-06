@@ -108,6 +108,18 @@ export class GitHubService {
                     }
                     additions
                     deletions
+                    associatedPullRequests(first: 1) {
+                      nodes {
+                        number
+                        title
+                        state
+                        headRefName
+                        baseRefName
+                        mergeCommit {
+                          oid
+                        }
+                      }
+                    }
                   }
                   pageInfo {
                     hasNextPage

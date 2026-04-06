@@ -1,6 +1,6 @@
 // Network DAG layout: horizontal timeline with branch lanes
 // GitHub-style: each branch gets its own Y-row, commits on X-axis by time
-// Only unique/divergent commits per branch + fork/merge connectors
+// Reconstructs deleted feature branches from merge commit topology + PR data
 
 import type { CommitNode } from './api.js';
 
@@ -19,8 +19,9 @@ export interface NetworkNode {
   branch: string;
   lane: number;
   nodeKey: string;
-  /** True if this is the commit's "primary" branch (shown with full opacity) */
   isPrimary: boolean;
+  /** True if this branch was deleted (reconstructed from merge commits) */
+  isVirtualBranch: boolean;
 }
 
 export interface NetworkEdge {
@@ -31,7 +32,6 @@ export interface NetworkEdge {
   x2: number;
   y2: number;
   color: string;
-  /** True for cross-lane fork/merge connections */
   isCrossLane: boolean;
 }
 
@@ -39,6 +39,8 @@ export interface NetworkLayout {
   nodes: NetworkNode[];
   edges: NetworkEdge[];
   branches: string[];
+  /** Maps branch name → true if it's a virtual (deleted) branch */
+  virtualBranches: Set<string>;
   totalWidth: number;
   totalHeight: number;
 }
@@ -64,6 +66,116 @@ export function getLaneColor(lane: number): string {
   return LANE_COLORS[lane % LANE_COLORS.length] ?? '#58a6ff';
 }
 
+/**
+ * Reconstruct deleted feature branches from merge commit topology.
+ *
+ * Strategy: For merge commits on the default branch, the second parent
+ * points to the tip of the feature branch that was merged. If that parent
+ * isn't on any known live branch, we walk backward from that parent until
+ * we hit a commit that IS on the default branch — those commits form a
+ * "virtual" (deleted) feature branch.
+ *
+ * We use associatedPullRequests.headRefName for the branch name when available.
+ */
+function reconstructDeletedBranches(
+  commits: CommitNode[],
+  branchMap: Map<string, string[]>,
+  defaultBranch: string
+): {
+  virtualBranches: Map<string, CommitNode[]>; // branchName → commits
+  virtualBranchNames: Set<string>;
+  updatedBranchMap: Map<string, string[]>;
+} {
+  const commitByOid = new Map<string, CommitNode>();
+  for (const c of commits) commitByOid.set(c.oid, c);
+
+  // All commits on the default branch
+  const defaultOids = new Set<string>();
+  for (const [oid, branches] of branchMap) {
+    if (branches.includes(defaultBranch)) defaultOids.add(oid);
+  }
+
+  const virtualBranches = new Map<string, CommitNode[]>();
+  const virtualBranchNames = new Set<string>();
+  const updatedBranchMap = new Map<string, string[]>(branchMap);
+  const processedSecondParents = new Set<string>();
+
+  // Find merge commits on default branch
+  for (const commit of commits) {
+    if (!defaultOids.has(commit.oid)) continue;
+    if (commit.parents.nodes.length < 2) continue;
+
+    // For each non-first parent (the merged branch tip)
+    for (let p = 1; p < commit.parents.nodes.length; p++) {
+      const secondParentOid = commit.parents.nodes[p]!.oid;
+
+      // Skip if this parent is on a live branch already
+      const parentBranches = branchMap.get(secondParentOid) ?? [];
+      const isOnNonDefaultLiveBranch = parentBranches.some((b) => b !== defaultBranch);
+      if (isOnNonDefaultLiveBranch) continue;
+
+      // Skip if already processed
+      if (processedSecondParents.has(secondParentOid)) continue;
+      processedSecondParents.add(secondParentOid);
+
+      // Determine branch name from PR data
+      const prs = commit.associatedPullRequests?.nodes ?? [];
+      const mergedPr = prs.find(
+        (pr) => pr.state === 'MERGED' && pr.mergeCommit?.oid === commit.oid
+      );
+      const branchName = (mergedPr?.headRefName)
+        ? mergedPr.headRefName
+        : `merged-into-${commit.abbreviatedOid}`;
+
+      // Skip if we already have a live branch with this name
+      if (!branchName || branchMap.has(branchName)) continue;
+
+      // Walk backward from secondParent collecting commits for this virtual branch
+      const branchCommits: CommitNode[] = [];
+      const visited = new Set<string>();
+      const queue = [secondParentOid];
+
+      while (queue.length > 0) {
+        const oid = queue.shift()!;
+        if (visited.has(oid)) continue;
+        visited.add(oid);
+
+        const c = commitByOid.get(oid);
+        if (!c) continue;
+
+        // Stop if we reach a commit on the default branch (fork point)
+        if (defaultOids.has(oid) && oid !== secondParentOid) continue;
+
+        branchCommits.push(c);
+
+        // Update branchMap
+        const existing = updatedBranchMap.get(oid) ?? [];
+        if (!existing.includes(branchName)) {
+          updatedBranchMap.set(oid, [...existing, branchName]);
+        }
+
+        // Continue walking parents
+        for (const parent of c.parents.nodes) {
+          if (!visited.has(parent.oid)) {
+            queue.push(parent.oid);
+          }
+        }
+      }
+
+      if (branchCommits.length > 0) {
+        // Sort oldest first
+        branchCommits.sort(
+          (a, b) => new Date(a.committedDate).getTime() - new Date(b.committedDate).getTime()
+        );
+        virtualBranches.set(branchName, branchCommits);
+        virtualBranchNames.add(branchName);
+      }
+    }
+  }
+
+  return { virtualBranches, virtualBranchNames, updatedBranchMap };
+}
+
 export function buildNetworkLayout(
   commits: CommitNode[],
   branchMap: Map<string, string[]>,
@@ -71,53 +183,68 @@ export function buildNetworkLayout(
   selectedBranches?: string[]
 ): NetworkLayout {
   if (commits.length === 0) {
-    return { nodes: [], edges: [], branches: [], totalWidth: 0, totalHeight: 0 };
+    return { nodes: [], edges: [], branches: [], virtualBranches: new Set(), totalWidth: 0, totalHeight: 0 };
   }
 
   const commitByOid = new Map<string, CommitNode>();
   for (const c of commits) commitByOid.set(c.oid, c);
 
-  // 1. Determine visible branches
+  // Reconstruct deleted feature branches
+  const { virtualBranchNames, updatedBranchMap } =
+    reconstructDeletedBranches(commits, branchMap, defaultBranch ?? 'main');
+
+  // 1. Determine all branches (live + virtual)
   const branchSet = new Set<string>();
-  for (const branches of branchMap.values()) {
+  for (const branches of updatedBranchMap.values()) {
     for (const b of branches) branchSet.add(b);
   }
 
-  const visibleBranches = selectedBranches && selectedBranches.length > 0
-    ? [...branchSet].filter((b) => selectedBranches.includes(b))
-    : [...branchSet];
+  // Filter to selected or all
+  let visibleBranches: string[];
+  if (selectedBranches && selectedBranches.length > 0) {
+    // Include selected live branches + all virtual branches
+    visibleBranches = [...branchSet].filter(
+      (b) => selectedBranches.includes(b) || virtualBranchNames.has(b)
+    );
+  } else {
+    visibleBranches = [...branchSet];
+  }
 
+  // Sort: default branch first, then live branches alphabetically, then virtual branches
   visibleBranches.sort((a, b) => {
     if (a === defaultBranch) return -1;
     if (b === defaultBranch) return 1;
+    const aVirtual = virtualBranchNames.has(a);
+    const bVirtual = virtualBranchNames.has(b);
+    if (!aVirtual && bVirtual) return -1;
+    if (aVirtual && !bVirtual) return 1;
     return a.localeCompare(b);
   });
 
   const branchIndex = new Map<string, number>();
   visibleBranches.forEach((name, i) => branchIndex.set(name, i));
 
-  // 2. Collect commits per branch
-  const branchCommits = new Map<string, CommitNode[]>();
+  // 2. Collect commits per branch using updated map
+  const branchCommitsMap = new Map<string, CommitNode[]>();
   for (const branch of visibleBranches) {
-    branchCommits.set(branch, []);
+    branchCommitsMap.set(branch, []);
   }
   for (const commit of commits) {
-    const branches = branchMap.get(commit.oid) ?? [];
+    const branches = updatedBranchMap.get(commit.oid) ?? [];
     for (const b of branches) {
       if (branchIndex.has(b)) {
-        branchCommits.get(b)!.push(commit);
+        branchCommitsMap.get(b)!.push(commit);
       }
     }
   }
-  // Sort oldest first
-  for (const [, arr] of branchCommits) {
+  for (const [, arr] of branchCommitsMap) {
     arr.sort((a, b) => new Date(a.committedDate).getTime() - new Date(b.committedDate).getTime());
   }
 
-  // 3. Primary branch: lowest index that contains the commit
+  // 3. Primary branch per commit
   const commitPrimary = new Map<string, string>();
   for (const commit of commits) {
-    const branches = branchMap.get(commit.oid) ?? [];
+    const branches = updatedBranchMap.get(commit.oid) ?? [];
     let best: string | null = null;
     let bestIdx = Infinity;
     for (const b of branches) {
@@ -130,36 +257,31 @@ export function buildNetworkLayout(
     if (best) commitPrimary.set(commit.oid, best);
   }
 
-  // 4. For each non-default branch, find its "unique" commits
-  //    (commits NOT on the default branch, or the branch-specific divergent area)
-  //    Plus the fork point (first shared commit) and merge point (last shared commit)
+  // 4. Default branch commits set
   const defaultCommitSet = new Set<string>();
-  for (const c of (branchCommits.get(defaultBranch ?? '') ?? [])) {
+  for (const c of (branchCommitsMap.get(defaultBranch ?? '') ?? [])) {
     defaultCommitSet.add(c.oid);
   }
 
-  // Build set of commits to show per branch
+  // 5. Display commits per branch
   const branchDisplayCommits = new Map<string, CommitNode[]>();
 
   for (const branch of visibleBranches) {
-    const bCommits = branchCommits.get(branch) ?? [];
+    const bCommits = branchCommitsMap.get(branch) ?? [];
 
     if (branch === defaultBranch) {
-      // Default branch shows all its commits
       branchDisplayCommits.set(branch, bCommits);
       continue;
     }
 
-    // For feature branches: show unique commits + fork/merge boundary commits
+    // For feature branches (live or virtual): show unique commits + fork point
     const uniqueCommits: CommitNode[] = [];
     let forkCommit: CommitNode | null = null;
 
     for (const c of bCommits) {
       if (!defaultCommitSet.has(c.oid)) {
-        // Unique to this branch
         uniqueCommits.push(c);
       } else if (uniqueCommits.length === 0) {
-        // This is a shared commit before divergence — track as potential fork point
         forkCommit = c;
       }
     }
@@ -168,13 +290,11 @@ export function buildNetworkLayout(
     if (forkCommit) display.push(forkCommit);
     display.push(...uniqueCommits);
 
-    // If branch has ONLY shared commits (no unique ones), show first + last
     if (uniqueCommits.length === 0 && bCommits.length > 0) {
       display.push(bCommits[0]!);
       if (bCommits.length > 1) display.push(bCommits[bCommits.length - 1]!);
     }
 
-    // Deduplicate and sort
     const seen = new Set<string>();
     const deduped = display.filter((c) => {
       if (seen.has(c.oid)) return false;
@@ -182,11 +302,10 @@ export function buildNetworkLayout(
       return true;
     });
     deduped.sort((a, b) => new Date(a.committedDate).getTime() - new Date(b.committedDate).getTime());
-
     branchDisplayCommits.set(branch, deduped);
   }
 
-  // 5. Global X positions — based on all commits sorted by time
+  // 6. Global X positions
   const allSorted = [...commits].sort(
     (a, b) => new Date(a.committedDate).getTime() - new Date(b.committedDate).getTime()
   );
@@ -203,13 +322,14 @@ export function buildNetworkLayout(
   const totalWidth = maxX + NODE_PADDING_RIGHT;
   const totalHeight = LANE_PADDING_TOP + visibleBranches.length * LANE_HEIGHT + 16;
 
-  // 6. Build nodes
+  // 7. Build nodes
   const nodes: NetworkNode[] = [];
   const nodeByKey = new Map<string, NetworkNode>();
 
   for (const branch of visibleBranches) {
     const lane = branchIndex.get(branch)!;
     const displayCommits = branchDisplayCommits.get(branch) ?? [];
+    const isVirtual = virtualBranchNames.has(branch);
 
     for (const commit of displayCommits) {
       const key = `${commit.oid}:${branch}`;
@@ -230,17 +350,18 @@ export function buildNetworkLayout(
         lane,
         nodeKey: key,
         isPrimary: primary === branch,
+        isVirtualBranch: isVirtual,
       };
       nodes.push(node);
       nodeByKey.set(key, node);
     }
   }
 
-  // 7. Build edges
+  // 8. Build edges
   const edges: NetworkEdge[] = [];
   const edgeSet = new Set<string>();
 
-  // 7a. Within-branch edges: connect consecutive displayed commits on same branch
+  // 8a. Within-branch edges
   for (const branch of visibleBranches) {
     const lane = branchIndex.get(branch)!;
     const displayCommits = branchDisplayCommits.get(branch) ?? [];
@@ -272,20 +393,19 @@ export function buildNetworkLayout(
     }
   }
 
-  // 7b. Cross-lane fork/merge connectors
+  // 8b. Cross-lane fork/merge connectors
   for (const branch of visibleBranches) {
     if (branch === defaultBranch) continue;
     const lane = branchIndex.get(branch)!;
     const displayCommits = branchDisplayCommits.get(branch) ?? [];
     if (displayCommits.length === 0) continue;
 
-    // Fork: first commit on this branch — connect from default branch instance
+    // Fork connector
     const firstCommit = displayCommits[0]!;
     const firstKey = `${firstCommit.oid}:${branch}`;
     const firstNode = nodeByKey.get(firstKey);
 
     if (firstNode && defaultCommitSet.has(firstCommit.oid) && defaultBranch) {
-      // This is a shared commit — connect from default branch lane
       const defaultKey = `${firstCommit.oid}:${defaultBranch}`;
       const defaultNode = nodeByKey.get(defaultKey);
       if (defaultNode && defaultNode.nodeKey !== firstNode.nodeKey) {
@@ -305,7 +425,7 @@ export function buildNetworkLayout(
         }
       }
     } else if (firstNode && !defaultCommitSet.has(firstCommit.oid)) {
-      // First unique commit — find its parent on default branch
+      // First unique commit — connect from parent on default branch
       for (const parentRef of firstCommit.parents.nodes) {
         if (defaultBranch) {
           const parentDefaultKey = `${parentRef.oid}:${defaultBranch}`;
@@ -331,7 +451,7 @@ export function buildNetworkLayout(
       }
     }
 
-    // Merge: look for merge commits on default branch that have a parent on this branch
+    // Merge connector: find merge commit on default branch whose 2nd parent is on this branch
     if (defaultBranch) {
       const defaultDisplayCommits = branchDisplayCommits.get(defaultBranch) ?? [];
       for (const dc of defaultDisplayCommits) {
@@ -341,7 +461,6 @@ export function buildNetworkLayout(
         const dcNode = nodeByKey.get(dcKey);
         if (!dcNode) continue;
 
-        // Check if any of the non-first parents are on this feature branch
         for (let p = 1; p < dc.parents.nodes.length; p++) {
           const parentOid = dc.parents.nodes[p]!.oid;
           const parentFeatureKey = `${parentOid}:${branch}`;
@@ -364,6 +483,39 @@ export function buildNetworkLayout(
           }
         }
       }
+
+      // Also: last commit on this branch → merge commit on default (if not already connected)
+      const lastCommit = displayCommits[displayCommits.length - 1]!;
+      const lastKey = `${lastCommit.oid}:${branch}`;
+      const lastNode = nodeByKey.get(lastKey);
+      if (lastNode) {
+        // Find the merge commit on default that references this commit as parent
+        for (const dc of defaultDisplayCommits) {
+          if (dc.parents.nodes.length < 2) continue;
+          for (let p = 1; p < dc.parents.nodes.length; p++) {
+            if (dc.parents.nodes[p]!.oid === lastCommit.oid) {
+              const dcKey = `${dc.oid}:${defaultBranch}`;
+              const dcNode = nodeByKey.get(dcKey);
+              if (dcNode) {
+                const edgeKey = `mergetip:${lastKey}->${dcKey}`;
+                if (!edgeSet.has(edgeKey)) {
+                  edgeSet.add(edgeKey);
+                  edges.push({
+                    sourceKey: lastKey,
+                    targetKey: dcKey,
+                    x1: lastNode.x,
+                    y1: lastNode.y,
+                    x2: dcNode.x,
+                    y2: dcNode.y,
+                    color: getLaneColor(lane),
+                    isCrossLane: true,
+                  });
+                }
+              }
+            }
+          }
+        }
+      }
     }
   }
 
@@ -371,6 +523,7 @@ export function buildNetworkLayout(
     nodes,
     edges,
     branches: visibleBranches,
+    virtualBranches: virtualBranchNames,
     totalWidth,
     totalHeight,
   };
