@@ -242,7 +242,14 @@ export function buildNetworkLayout(
     .sort((a, b) => new Date(a.committedDate).getTime() - new Date(b.committedDate).getTime());
   branchDisplayCommits.set(db, spineCommits);
 
+  // Collect all OIDs that belong to virtual branches (to exclude from live branches)
+  const virtualBranchOids = new Set<string>();
+  for (const [, vCommits] of virtualBranchCommits) {
+    for (const c of vCommits) virtualBranchOids.add(c.oid);
+  }
+
   // Live non-default branches: show unique commits + fork point
+  // Exclude commits that belong to virtual branches
   for (const branch of visibleLive) {
     if (branch === db) continue;
     const bCommits = commits
@@ -253,6 +260,8 @@ export function buildNetworkLayout(
     let forkCommit: CommitNode | null = null;
 
     for (const c of bCommits) {
+      // Skip commits that belong to a virtual (deleted) feature branch
+      if (virtualBranchOids.has(c.oid)) continue;
       if (!spine.has(c.oid)) {
         uniqueCommits.push(c);
       } else if (uniqueCommits.length === 0) {
