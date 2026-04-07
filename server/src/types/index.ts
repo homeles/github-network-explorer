@@ -128,6 +128,65 @@ export interface BranchInfo {
   isProtected: boolean;
 }
 
+export interface FileChange {
+  filename: string;
+  additions: number;
+  deletions: number;
+  changes: number;
+  status: string;
+}
+
+export interface CommitFileStats {
+  sha: string;
+  date: string;
+  author: {
+    login: string | null;
+    avatarUrl: string;
+    name: string | null;
+  };
+  message: string;
+  additions: number;
+  deletions: number;
+  files: FileChange[];
+}
+
+export interface DirectoryStats {
+  path: string;
+  additions: number;
+  deletions: number;
+  changes: number;
+  commitCount: number;
+  files: number;
+  children: DirectoryStats[];
+}
+
+export interface CodeFrequencyData {
+  timeSeries: Array<{
+    weekStart: string;
+    additions: number;
+    deletions: number;
+    commitCount: number;
+  }>;
+  directoryBreakdown: DirectoryStats[];
+  topFiles: Array<{
+    path: string;
+    additions: number;
+    deletions: number;
+    changes: number;
+    commitCount: number;
+  }>;
+  contributors: Array<{
+    login: string | null;
+    name: string | null;
+    avatarUrl: string;
+    additions: number;
+    deletions: number;
+    commitCount: number;
+  }>;
+  totalCommitsAnalyzed: number;
+  period: { since: string; until: string };
+}
+
 // Extend express-session
 declare module 'express-session' {
   interface SessionData {

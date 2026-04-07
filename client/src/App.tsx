@@ -6,6 +6,7 @@ import NetworkPage from './pages/NetworkPage.js';
 import PullRequestsPage from './pages/PullRequestsPage.js';
 import BranchesPage from './pages/BranchesPage.js';
 import SettingsPage from './pages/SettingsPage.js';
+import CodeFrequencyPage from './pages/CodeFrequencyPage.js';
 
 function AppIndex() {
   return (
@@ -35,6 +36,7 @@ export default function App() {
         <Route path="repo/:owner/:repo/pulls" element={<PullRequestsPage />} />
         <Route path="repo/:owner/:repo/branches" element={<BranchesPage />} />
         <Route path="repo/:owner/:repo/settings" element={<SettingsPage />} />
+        <Route path="repo/:owner/:repo/code-frequency" element={<CodeFrequencyPage />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

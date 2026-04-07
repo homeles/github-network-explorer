@@ -116,6 +116,51 @@ export interface BranchInfo {
   isProtected: boolean;
 }
 
+export interface FileChange {
+  filename: string;
+  additions: number;
+  deletions: number;
+  changes: number;
+  status: string;
+}
+
+export interface DirectoryStats {
+  path: string;
+  additions: number;
+  deletions: number;
+  changes: number;
+  commitCount: number;
+  files: number;
+  children: DirectoryStats[];
+}
+
+export interface CodeFrequencyData {
+  timeSeries: Array<{
+    weekStart: string;
+    additions: number;
+    deletions: number;
+    commitCount: number;
+  }>;
+  directoryBreakdown: DirectoryStats[];
+  topFiles: Array<{
+    path: string;
+    additions: number;
+    deletions: number;
+    changes: number;
+    commitCount: number;
+  }>;
+  contributors: Array<{
+    login: string | null;
+    name: string | null;
+    avatarUrl: string;
+    additions: number;
+    deletions: number;
+    commitCount: number;
+  }>;
+  totalCommitsAnalyzed: number;
+  period: { since: string; until: string };
+}
+
 export interface AuthStatus {
   authenticated: boolean;
   user?: {
@@ -162,5 +207,20 @@ export const api = {
       apiFetch<PullRequest[]>(`/api/repos/${owner}/${repo}/pulls?state=${state}`),
     branches: (owner: string, repo: string) =>
       apiFetch<BranchInfo[]>(`/api/repos/${owner}/${repo}/branches`),
+    codeFrequency: (
+      owner: string,
+      repo: string,
+      options?: { since?: string; until?: string; path?: string; maxCommits?: number }
+    ) => {
+      const params = new URLSearchParams();
+      if (options?.since) params.set('since', options.since);
+      if (options?.until) params.set('until', options.until);
+      if (options?.path) params.set('path', options.path);
+      if (options?.maxCommits !== undefined) params.set('maxCommits', String(options.maxCommits));
+      const qs = params.toString();
+      return apiFetch<CodeFrequencyData>(
+        `/api/repos/${owner}/${repo}/code-frequency${qs ? `?${qs}` : ''}`
+      );
+    },
   },
 };
