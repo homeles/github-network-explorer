@@ -40,15 +40,29 @@ export default function NetworkPage() {
       ? allBranchNames
       : [];
 
-  // For the network graph, only fetch the default branch initially.
-  // Virtual (deleted) branches are reconstructed from main's merge commit
-  // topology — no need to fetch every branch separately.
-  // Other live branches (like demo) are added if explicitly selected.
-  const fetchBranches = effectiveBranches.includes(defaultBranch)
-    ? [defaultBranch, ...effectiveBranches.filter(
-        (b) => b !== defaultBranch
-      ).slice(0, 4)] // default + up to 4 other live branches
-    : effectiveBranches.slice(0, 5);
+  // For the network graph, fetch only the default branch initially.
+  // Virtual (deleted) branches are fully reconstructed from main's merge
+  // commit topology. Other live branches are added only if they differ
+  // from the default (i.e., user has specific branches selected).
+  // This keeps initial load fast (1 API call) while showing the full
+  // fork/merge topology.
+  const fetchBranches = [defaultBranch];
+
+  // Add other explicitly selected live branches (if user deselected "all"
+  // and picked specific ones that aren't the default)
+  if (effectiveBranches.length < allBranchNames.length) {
+    for (const b of effectiveBranches) {
+      if (b !== defaultBranch && !fetchBranches.includes(b)) {
+        fetchBranches.push(b);
+        if (fetchBranches.length >= 5) break;
+      }
+    }
+  } else if (allBranchNames.length <= 5) {
+    // Small repo — fetch all branches
+    for (const b of effectiveBranches) {
+      if (!fetchBranches.includes(b)) fetchBranches.push(b);
+    }
+  }
 
   const {
     commits,
