@@ -57,12 +57,13 @@ export default function NetworkPage() {
     true // autoFetchAll pages of default branch
   );
 
-  // Phase 2: Progressively fetch other live branches one at a time
+  // Phase 2: Load other live branches ON DEMAND (not automatic)
   const otherBranches = effectiveBranches.filter((b) => b !== defaultBranch);
   const [loadedBranchIdx, setLoadedBranchIdx] = useState(0);
   const [extraCommits, setExtraCommits] = useState<CommitNode[]>([]);
   const [extraBranchMap, setExtraBranchMap] = useState<Map<string, string[]>>(new Map());
   const [loadingExtra, setLoadingExtra] = useState(false);
+  const BRANCH_BATCH_SIZE = 10;
 
   // Reset extra state when repo changes
   useEffect(() => {
@@ -71,42 +72,50 @@ export default function NetworkPage() {
     setExtraBranchMap(new Map());
   }, [owner, repo]);
 
-  // Load other branches one by one in background
-  useEffect(() => {
-    if (commitsLoading || !owner || !repo) return;
-    if (loadedBranchIdx >= otherBranches.length) {
-      setLoadingExtra(false);
-      return;
-    }
+  // Load next batch of branches (called by button click)
+  function loadMoreBranches() {
+    if (loadingExtra || loadedBranchIdx >= otherBranches.length) return;
 
-    const branch = otherBranches[loadedBranchIdx]!;
-    let cancelled = false;
+    const endIdx = Math.min(loadedBranchIdx + BRANCH_BATCH_SIZE, otherBranches.length);
+    const batchToLoad = otherBranches.slice(loadedBranchIdx, endIdx);
     setLoadingExtra(true);
 
-    api.repos.commits(owner, repo, branch).then((page) => {
-      if (cancelled) return;
-      setExtraCommits((prev) => {
-        const existingOids = new Set(prev.map((c) => c.oid));
-        const newCommits = page.nodes.filter((c) => !existingOids.has(c.oid));
-        return [...prev, ...newCommits];
-      });
-      setExtraBranchMap((prev) => {
-        const next = new Map(prev);
-        for (const commit of page.nodes) {
-          const existing = next.get(commit.oid) ?? [];
-          if (!existing.includes(branch)) {
-            next.set(commit.oid, [...existing, branch]);
-          }
-        }
-        return next;
-      });
-      setLoadedBranchIdx((i) => i + 1);
-    }).catch(() => {
-      if (!cancelled) setLoadedBranchIdx((i) => i + 1); // skip failed branch
-    });
+    // Fetch batch sequentially (1 at a time to be kind to API)
+    let currentIdx = 0;
+    function fetchNext() {
+      if (currentIdx >= batchToLoad.length) {
+        setLoadedBranchIdx(endIdx);
+        setLoadingExtra(false);
+        return;
+      }
+      const branch = batchToLoad[currentIdx]!;
+      currentIdx++;
 
-    return () => { cancelled = true; };
-  }, [commitsLoading, owner, repo, loadedBranchIdx, otherBranches]);
+      api.repos.commits(owner!, repo!, branch).then((page) => {
+        setExtraCommits((prev) => {
+          const existingOids = new Set(prev.map((c) => c.oid));
+          const newCommits = page.nodes.filter((c) => !existingOids.has(c.oid));
+          return [...prev, ...newCommits];
+        });
+        setExtraBranchMap((prev) => {
+          const next = new Map(prev);
+          for (const commit of page.nodes) {
+            const existing = next.get(commit.oid) ?? [];
+            if (!existing.includes(branch)) {
+              next.set(commit.oid, [...existing, branch]);
+            }
+          }
+          return next;
+        });
+        fetchNext();
+      }).catch(() => {
+        fetchNext(); // skip failed branch
+      });
+    }
+    fetchNext();
+  }
+
+  const hasMoreBranches = loadedBranchIdx < otherBranches.length;
 
   // Merge main + extra commits
   const { commits, branchMap } = useMemo(() => {
@@ -318,7 +327,7 @@ export default function NetworkPage() {
                   animation: 'spin 0.8s linear infinite',
                 }}
               />
-              Loading branches ({loadedBranchIdx}/{otherBranches.length})...
+              Loading branches...
             </div>
           )}
 
@@ -371,7 +380,32 @@ export default function NetworkPage() {
             </div>
           )}
 
-          {/* No manual load more — auto-fetch handles all pagination */}
+          {/* Load more branches button */}
+          {!commitsLoading && hasMoreBranches && !loadingExtra && commits.length > 0 && (
+            <div
+              style={{
+                position: 'absolute',
+                bottom: 16,
+                left: '50%',
+                transform: 'translateX(-50%)',
+              }}
+            >
+              <button
+                onClick={loadMoreBranches}
+                style={{
+                  background: '#161b22',
+                  border: '1px solid #30363d',
+                  borderRadius: 8,
+                  color: '#58a6ff',
+                  padding: '0.5rem 1.25rem',
+                  fontSize: '0.875rem',
+                  cursor: 'pointer',
+                }}
+              >
+                Load more branches ({otherBranches.length - loadedBranchIdx} remaining)
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Commit detail sidebar */}
