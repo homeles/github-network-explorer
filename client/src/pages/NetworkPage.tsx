@@ -76,7 +76,8 @@ export default function NetworkPage() {
     owner!,
     repo!,
     fetchBranches,
-    !!owner && !!repo && fetchBranches.length > 0
+    !!owner && !!repo && fetchBranches.length > 0,
+    true // autoFetchAll — load all pages for complete network graph
   );
 
   const { commit: commitDetail, isLoading: detailLoading } = useCommitDetail(
@@ -229,6 +230,39 @@ export default function NetworkPage() {
             </div>
           )}
 
+          {/* Fetching more pages indicator (shown while graph is already visible) */}
+          {!commitsLoading && isFetchingNextPage && (
+            <div
+              style={{
+                position: 'absolute',
+                top: 8,
+                right: 8,
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.5rem',
+                background: '#161b22',
+                border: '1px solid #30363d',
+                borderRadius: 8,
+                padding: '0.375rem 0.75rem',
+                fontSize: '0.8125rem',
+                color: '#8b949e',
+                zIndex: 10,
+              }}
+            >
+              <div
+                style={{
+                  width: 14,
+                  height: 14,
+                  border: '2px solid #21262d',
+                  borderTopColor: '#58a6ff',
+                  borderRadius: '50%',
+                  animation: 'spin 0.8s linear infinite',
+                }}
+              />
+              Loading more commits...
+            </div>
+          )}
+
           {/* Error */}
           {error && !commitsLoading && (
             <div
@@ -278,8 +312,8 @@ export default function NetworkPage() {
             </div>
           )}
 
-          {/* Load more button */}
-          {hasNextPage && commits.length > 0 && (
+          {/* Load more — manual fallback (auto-fetch handles most cases) */}
+          {hasNextPage && !isFetchingNextPage && commits.length > 0 && (
             <div
               style={{
                 position: 'absolute',

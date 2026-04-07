@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useEffect } from 'react';
 import { useQuery, useInfiniteQuery } from '@tanstack/react-query';
 import { api } from '../lib/api.js';
 import type { CommitNode } from '../lib/api.js';
@@ -46,7 +46,8 @@ export function useMultiBranchCommits(
   owner: string,
   repo: string,
   branches: string[],
-  enabled = true
+  enabled = true,
+  autoFetchAll = false
 ) {
   // Sort branch names to produce a stable query key regardless of selection order
   const branchesKey = useMemo(() => branches.slice().sort().join('\x00'), [branches]);
@@ -79,6 +80,13 @@ export function useMultiBranchCommits(
       enabled: enabled && !!owner && !!repo && branches.length > 0,
       staleTime: 5 * 60 * 1000,
     });
+
+  // Auto-fetch all pages when autoFetchAll is enabled
+  useEffect(() => {
+    if (autoFetchAll && hasNextPage && !isFetchingNextPage) {
+      void fetchNextPage();
+    }
+  }, [autoFetchAll, hasNextPage, isFetchingNextPage, fetchNextPage]);
 
   const { commits, branchMap } = useMemo(() => {
     const commitMap = new Map<string, CommitNode>();
