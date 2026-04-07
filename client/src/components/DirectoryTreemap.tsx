@@ -19,19 +19,28 @@ interface TreeNode {
   children?: TreeNode[];
 }
 
-function buildTree(nodes: DirectoryStats[], currentPath: string): TreeNode {
-  // Filter to only show children of the currentPath
-  const relevant = currentPath
-    ? nodes.filter((n) => n.path.startsWith(currentPath) || n.path === currentPath)
-    : nodes;
+function findNodeByPath(
+  nodes: DirectoryStats[],
+  targetPath: string
+): DirectoryStats | null {
+  for (const node of nodes) {
+    if (node.path === targetPath) return node;
+    if (targetPath.startsWith(node.path)) {
+      const found = findNodeByPath(node.children, targetPath);
+      if (found) return found;
+    }
+  }
+  return null;
+}
 
+function buildTree(nodes: DirectoryStats[], currentPath: string): TreeNode {
   function statsToNode(s: DirectoryStats): TreeNode {
     const name = s.path.replace(/\/$/, '').split('/').pop() ?? s.path;
     if (s.children.length > 0) {
       return {
         name,
         path: s.path,
-        value: s.changes,
+        value: s.changes || 1,
         additions: s.additions,
         deletions: s.deletions,
         children: s.children.map(statsToNode),
@@ -46,13 +55,40 @@ function buildTree(nodes: DirectoryStats[], currentPath: string): TreeNode {
     };
   }
 
+  // If we have a path filter, walk the tree to find that node and show its children
+  if (currentPath) {
+    const target = findNodeByPath(nodes, currentPath);
+    if (target && target.children.length > 0) {
+      return {
+        name: currentPath,
+        path: currentPath,
+        value: 0,
+        additions: 0,
+        deletions: 0,
+        children: target.children.map(statsToNode),
+      };
+    }
+    // If no children found (leaf or not found), show the node itself
+    if (target) {
+      return {
+        name: currentPath,
+        path: currentPath,
+        value: 0,
+        additions: 0,
+        deletions: 0,
+        children: [statsToNode(target)],
+      };
+    }
+  }
+
+  // No filter — show top-level
   return {
-    name: currentPath || 'root',
-    path: currentPath,
+    name: 'root',
+    path: '',
     value: 0,
     additions: 0,
     deletions: 0,
-    children: relevant.map(statsToNode),
+    children: nodes.map(statsToNode),
   };
 }
 
