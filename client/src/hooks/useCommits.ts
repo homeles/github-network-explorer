@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useEffect } from 'react';
 import { useQuery, useInfiniteQuery } from '@tanstack/react-query';
 import { api } from '../lib/api.js';
 import type { CommitNode } from '../lib/api.js';
@@ -46,7 +46,8 @@ export function useMultiBranchCommits(
   owner: string,
   repo: string,
   branches: string[],
-  enabled = true
+  enabled = true,
+  autoFetchAll = false
 ) {
   // Sort branch names to produce a stable query key regardless of selection order
   const branchesKey = useMemo(() => branches.slice().sort().join('\x00'), [branches]);
@@ -55,11 +56,18 @@ export function useMultiBranchCommits(
     useInfiniteQuery({
       queryKey: ['multi-commits', owner, repo, branchesKey],
       queryFn: async ({ pageParam }: { pageParam: Record<string, string | undefined> }) => {
-        const results = await Promise.all(
-          branches.map((branch) =>
-            api.repos.commits(owner, repo, branch, pageParam[branch])
-          )
-        );
+        // Fetch branches in batches of 3 to avoid overwhelming the API
+        const BATCH_SIZE = 3;
+        const results: Awaited<ReturnType<typeof api.repos.commits>>[] = [];
+        for (let i = 0; i < branches.length; i += BATCH_SIZE) {
+          const batch = branches.slice(i, i + BATCH_SIZE);
+          const batchResults = await Promise.all(
+            batch.map((branch) =>
+              api.repos.commits(owner, repo, branch, pageParam[branch])
+            )
+          );
+          results.push(...batchResults);
+        }
         // Capture the branch list alongside results so getNextPageParam can map indices
         return { results, branches: [...branches] };
       },
@@ -79,6 +87,13 @@ export function useMultiBranchCommits(
       enabled: enabled && !!owner && !!repo && branches.length > 0,
       staleTime: 5 * 60 * 1000,
     });
+
+  // Auto-fetch all pages when autoFetchAll is enabled
+  useEffect(() => {
+    if (autoFetchAll && hasNextPage && !isFetchingNextPage) {
+      void fetchNextPage();
+    }
+  }, [autoFetchAll, hasNextPage, isFetchingNextPage, fetchNextPage]);
 
   const { commits, branchMap } = useMemo(() => {
     const commitMap = new Map<string, CommitNode>();

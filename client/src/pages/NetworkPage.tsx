@@ -1,8 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useParams } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import { useMultiBranchCommits, useCommitDetail } from '../hooks/useCommits.js';
 import { api } from '../lib/api.js';
+import type { CommitNode } from '../lib/api.js';
 import NetworkGraphVisualization from '../components/NetworkGraphVisualization.js';
 import CommitDetail from '../components/CommitDetail.js';
 import BranchSelector from '../components/BranchSelector.js';
@@ -21,7 +22,6 @@ export default function NetworkPage() {
   const defaultBranch = overview?.defaultBranchRef?.name ?? 'main';
   const allBranchNames = overview?.branches.map((b) => b.name) ?? [];
 
-  // Reset when repo changes
   useEffect(() => {
     setSelectedBranches([]);
     setSelectedOid(null);
@@ -41,20 +41,112 @@ export default function NetworkPage() {
       ? allBranchNames
       : [];
 
+  // Phase 1: Fetch default branch (fast, 1 API call)
+  const fetchBranches = [defaultBranch];
+
   const {
-    commits,
-    branchMap,
+    commits: mainCommits,
+    branchMap: mainBranchMap,
     isLoading: commitsLoading,
     error,
-    fetchNextPage,
-    hasNextPage,
-    isFetchingNextPage,
   } = useMultiBranchCommits(
     owner!,
     repo!,
-    effectiveBranches,
-    !!owner && !!repo && effectiveBranches.length > 0
+    fetchBranches,
+    !!owner && !!repo && fetchBranches.length > 0,
+    true // autoFetchAll pages of default branch
   );
+
+  // Phase 2: Load other live branches ON DEMAND (not automatic)
+  const otherBranches = effectiveBranches.filter((b) => b !== defaultBranch);
+  const [loadedBranchIdx, setLoadedBranchIdx] = useState(0);
+  const [extraCommits, setExtraCommits] = useState<CommitNode[]>([]);
+  const [extraBranchMap, setExtraBranchMap] = useState<Map<string, string[]>>(new Map());
+  const [loadingExtra, setLoadingExtra] = useState(false);
+  const BRANCH_BATCH_SIZE = 10;
+
+  // Reset extra state when repo changes
+  useEffect(() => {
+    setLoadedBranchIdx(0);
+    setExtraCommits([]);
+    setExtraBranchMap(new Map());
+  }, [owner, repo]);
+
+  // Load next batch of branches (called by button click)
+  function loadMoreBranches() {
+    if (loadingExtra || loadedBranchIdx >= otherBranches.length) return;
+
+    const endIdx = Math.min(loadedBranchIdx + BRANCH_BATCH_SIZE, otherBranches.length);
+    const batchToLoad = otherBranches.slice(loadedBranchIdx, endIdx);
+    setLoadingExtra(true);
+
+    // Fetch batch sequentially (1 at a time to be kind to API)
+    let currentIdx = 0;
+    function fetchNext() {
+      if (currentIdx >= batchToLoad.length) {
+        setLoadedBranchIdx(endIdx);
+        setLoadingExtra(false);
+        return;
+      }
+      const branch = batchToLoad[currentIdx]!;
+      currentIdx++;
+
+      api.repos.commits(owner!, repo!, branch).then((page) => {
+        setExtraCommits((prev) => {
+          const existingOids = new Set(prev.map((c) => c.oid));
+          const newCommits = page.nodes.filter((c) => !existingOids.has(c.oid));
+          return [...prev, ...newCommits];
+        });
+        setExtraBranchMap((prev) => {
+          const next = new Map(prev);
+          for (const commit of page.nodes) {
+            const existing = next.get(commit.oid) ?? [];
+            if (!existing.includes(branch)) {
+              next.set(commit.oid, [...existing, branch]);
+            }
+          }
+          return next;
+        });
+        fetchNext();
+      }).catch(() => {
+        fetchNext(); // skip failed branch
+      });
+    }
+    fetchNext();
+  }
+
+  const hasMoreBranches = loadedBranchIdx < otherBranches.length;
+
+  // Merge main + extra commits
+  const { commits, branchMap } = useMemo(() => {
+    const commitMap = new Map<string, CommitNode>();
+    const bMap = new Map<string, string[]>();
+
+    // Add main commits
+    for (const c of mainCommits) {
+      commitMap.set(c.oid, c);
+    }
+    for (const [oid, branches] of mainBranchMap) {
+      bMap.set(oid, [...(bMap.get(oid) ?? []), ...branches]);
+    }
+
+    // Add extra branch commits
+    for (const c of extraCommits) {
+      if (!commitMap.has(c.oid)) commitMap.set(c.oid, c);
+    }
+    for (const [oid, branches] of extraBranchMap) {
+      const existing = bMap.get(oid) ?? [];
+      for (const b of branches) {
+        if (!existing.includes(b)) existing.push(b);
+      }
+      bMap.set(oid, existing);
+    }
+
+    const allCommits = Array.from(commitMap.values()).sort(
+      (a, b) => new Date(b.committedDate).getTime() - new Date(a.committedDate).getTime()
+    );
+    return { commits: allCommits, branchMap: bMap };
+  }, [mainCommits, mainBranchMap, extraCommits, extraBranchMap]);
 
   const { commit: commitDetail, isLoading: detailLoading } = useCommitDetail(
     owner!,
@@ -115,7 +207,7 @@ export default function NetworkPage() {
           />
         </div>
 
-        {/* View label */}
+        {/* View label + commit count */}
         <div
           style={{
             display: 'flex',
@@ -132,6 +224,11 @@ export default function NetworkPage() {
           }}
         >
           🔀 Network View
+          {commits.length > 0 && (
+            <span style={{ color: '#8b949e', fontWeight: 400 }}>
+              · {commits.length} commits
+            </span>
+          )}
         </div>
 
         {overview && (
@@ -201,6 +298,39 @@ export default function NetworkPage() {
             </div>
           )}
 
+          {/* Fetching more branches indicator */}
+          {!commitsLoading && loadingExtra && (
+            <div
+              style={{
+                position: 'absolute',
+                top: 8,
+                right: 8,
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.5rem',
+                background: '#161b22',
+                border: '1px solid #30363d',
+                borderRadius: 8,
+                padding: '0.375rem 0.75rem',
+                fontSize: '0.8125rem',
+                color: '#8b949e',
+                zIndex: 10,
+              }}
+            >
+              <div
+                style={{
+                  width: 14,
+                  height: 14,
+                  border: '2px solid #21262d',
+                  borderTopColor: '#58a6ff',
+                  borderRadius: '50%',
+                  animation: 'spin 0.8s linear infinite',
+                }}
+              />
+              Loading branches...
+            </div>
+          )}
+
           {/* Error */}
           {error && !commitsLoading && (
             <div
@@ -250,8 +380,8 @@ export default function NetworkPage() {
             </div>
           )}
 
-          {/* Load more */}
-          {hasNextPage && commits.length > 0 && (
+          {/* Load more branches button */}
+          {!commitsLoading && hasMoreBranches && !loadingExtra && commits.length > 0 && (
             <div
               style={{
                 position: 'absolute',
@@ -261,8 +391,7 @@ export default function NetworkPage() {
               }}
             >
               <button
-                onClick={() => void fetchNextPage()}
-                disabled={isFetchingNextPage}
+                onClick={loadMoreBranches}
                 style={{
                   background: '#161b22',
                   border: '1px solid #30363d',
@@ -270,11 +399,10 @@ export default function NetworkPage() {
                   color: '#58a6ff',
                   padding: '0.5rem 1.25rem',
                   fontSize: '0.875rem',
-                  cursor: isFetchingNextPage ? 'not-allowed' : 'pointer',
-                  opacity: isFetchingNextPage ? 0.6 : 1,
+                  cursor: 'pointer',
                 }}
               >
-                {isFetchingNextPage ? 'Loading more...' : 'Load more commits'}
+                Load more branches ({otherBranches.length - loadedBranchIdx} remaining)
               </button>
             </div>
           )}
