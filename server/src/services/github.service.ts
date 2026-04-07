@@ -6,6 +6,7 @@ import type {
   CommitDetail,
   PullRequestSummary,
   UserRepo,
+  BranchInfo,
 } from '../types/index.js';
 
 export class GitHubService {
@@ -257,6 +258,107 @@ export class GitHubService {
     }>(query, { owner, repo, states });
 
     return result.repository.pullRequests.nodes;
+  }
+
+  async getBranches(owner: string, repo: string): Promise<BranchInfo[]> {
+    const query = `
+      query($owner: String!, $repo: String!) {
+        repository(owner: $owner, name: $repo) {
+          defaultBranchRef {
+            name
+          }
+          refs(refPrefix: "refs/heads/", first: 50, orderBy: { field: TAG_COMMIT_DATE, direction: DESC }) {
+            nodes {
+              name
+              branchProtectionRule {
+                id
+              }
+              target {
+                ... on Commit {
+                  message
+                  committedDate
+                  author {
+                    name
+                    avatarUrl
+                    user {
+                      login
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    `;
+
+    interface BranchNode {
+      name: string;
+      branchProtectionRule: { id: string } | null;
+      target: {
+        message: string;
+        committedDate: string;
+        author: {
+          name: string | null;
+          avatarUrl: string;
+          user: { login: string } | null;
+        } | null;
+      } | null;
+    }
+
+    const result = await this.graphqlWithAuth<{
+      repository: {
+        defaultBranchRef: { name: string } | null;
+        refs: { nodes: BranchNode[] };
+      };
+    }>(query, { owner, repo });
+
+    const defaultBranch = result.repository.defaultBranchRef?.name ?? 'main';
+    const branches = result.repository.refs.nodes;
+
+    // Fetch ahead/behind counts in parallel via REST compare API
+    const comparisons = await Promise.allSettled(
+      branches.map(async (branch) => {
+        if (branch.name === defaultBranch) {
+          return { ahead_by: 0, behind_by: 0 };
+        }
+        const resp = await this.octokit.request(
+          'GET /repos/{owner}/{repo}/compare/{basehead}',
+          {
+            owner,
+            repo,
+            basehead: `${defaultBranch}...${branch.name}`,
+          }
+        );
+        return {
+          ahead_by: resp.data.ahead_by as number,
+          behind_by: resp.data.behind_by as number,
+        };
+      })
+    );
+
+    return branches.map((branch, i) => {
+      const cmpResult = comparisons[i];
+      const cmp =
+        cmpResult.status === 'fulfilled'
+          ? cmpResult.value
+          : { ahead_by: 0, behind_by: 0 };
+      const target = branch.target;
+      return {
+        name: branch.name,
+        isDefault: branch.name === defaultBranch,
+        lastCommitMessage: target?.message ?? '',
+        lastCommitDate: target?.committedDate ?? '',
+        lastCommitAuthor: {
+          name: target?.author?.name ?? null,
+          login: target?.author?.user?.login ?? null,
+          avatarUrl: target?.author?.avatarUrl ?? '',
+        },
+        aheadBy: cmp.ahead_by,
+        behindBy: cmp.behind_by,
+        isProtected: branch.branchProtectionRule !== null,
+      };
+    });
   }
 
   async getUserRepos(): Promise<UserRepo[]> {

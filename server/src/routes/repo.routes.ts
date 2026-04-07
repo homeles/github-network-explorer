@@ -135,6 +135,31 @@ router.get(
   }
 );
 
+// GET /api/repos/:owner/:repo/branches
+router.get(
+  '/:owner/:repo/branches',
+  async (req: Request, res: Response): Promise<void> => {
+    const owner = str(req.params['owner']);
+    const repo = str(req.params['repo']);
+    const cacheKey = cacheService.cacheKey(['branches', owner, repo]);
+    const cached = cacheService.get(cacheKey);
+    if (cached) {
+      res.json(cached);
+      return;
+    }
+
+    try {
+      const service = getGitHubService(req);
+      const branches = await service.getBranches(owner, repo);
+      cacheService.set(cacheKey, branches, 120);
+      res.json(branches);
+    } catch (err) {
+      console.error('Get branches error:', err);
+      res.status(500).json({ error: 'Failed to fetch branches' });
+    }
+  }
+);
+
 // GET /api/repos/:owner/:repo/pulls
 router.get(
   '/:owner/:repo/pulls',

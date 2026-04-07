@@ -101,6 +101,21 @@ export interface PullRequest {
   reviews: { totalCount: number };
 }
 
+export interface BranchInfo {
+  name: string;
+  isDefault: boolean;
+  lastCommitMessage: string;
+  lastCommitDate: string;
+  lastCommitAuthor: {
+    name: string | null;
+    login: string | null;
+    avatarUrl: string;
+  };
+  aheadBy: number;
+  behindBy: number;
+  isProtected: boolean;
+}
+
 export interface AuthStatus {
   authenticated: boolean;
   user?: {
@@ -145,5 +160,7 @@ export const api = {
       apiFetch<CommitDetail>(`/api/repos/${owner}/${repo}/commit/${sha}`),
     pullRequests: (owner: string, repo: string, state = 'OPEN') =>
       apiFetch<PullRequest[]>(`/api/repos/${owner}/${repo}/pulls?state=${state}`),
+    branches: (owner: string, repo: string) =>
+      apiFetch<BranchInfo[]>(`/api/repos/${owner}/${repo}/branches`),
   },
 };

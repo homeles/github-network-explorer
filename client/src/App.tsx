@@ -3,6 +3,9 @@ import LoginPage from './pages/LoginPage.js';
 import AppLayout from './pages/AppLayout.js';
 import GraphPage from './pages/GraphPage.js';
 import NetworkPage from './pages/NetworkPage.js';
+import PullRequestsPage from './pages/PullRequestsPage.js';
+import BranchesPage from './pages/BranchesPage.js';
+import SettingsPage from './pages/SettingsPage.js';
 
 function AppIndex() {
   return (
@@ -29,6 +32,9 @@ export default function App() {
         <Route index element={<AppIndex />} />
         <Route path="repo/:owner/:repo" element={<GraphPage />} />
         <Route path="repo/:owner/:repo/network" element={<NetworkPage />} />
+        <Route path="repo/:owner/:repo/pulls" element={<PullRequestsPage />} />
+        <Route path="repo/:owner/:repo/branches" element={<BranchesPage />} />
+        <Route path="repo/:owner/:repo/settings" element={<SettingsPage />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
