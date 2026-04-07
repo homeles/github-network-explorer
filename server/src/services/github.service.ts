@@ -373,7 +373,7 @@ export class GitHubService {
       maxCommits?: number;
     } = {}
   ): Promise<CodeFrequencyData> {
-    const maxCommits = Math.min(options.maxCommits ?? 300, 500);
+    const maxCommits = Math.min(options.maxCommits ?? 100, 500);
     const since = options.since;
     const until = options.until;
     const pathFilter = options.path;
@@ -421,7 +421,7 @@ export class GitHubService {
     // 2. Fetch commit details in batches of 5
     const commitDetails: Array<{ sha: string; date: string; author: { login: string | null; avatarUrl: string; name: string | null }; message: string; additions: number; deletions: number; files: Array<{ filename: string; additions: number; deletions: number; changes: number; status: string }> }> = [];
 
-    const BATCH = 5;
+    const BATCH = 10;
     for (let i = 0; i < allCommitShas.length; i += BATCH) {
       const batch = allCommitShas.slice(i, i + BATCH);
       const results = await Promise.allSettled(

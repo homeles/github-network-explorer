@@ -199,7 +199,7 @@ router.get(
     const path = typeof req.query.path === 'string' ? req.query.path : undefined;
     const maxCommits = typeof req.query.maxCommits === 'string' ? parseInt(req.query.maxCommits, 10) : undefined;
 
-    const cacheKey = cacheService.cacheKey(['code-frequency', owner, repo, path ?? '', since ?? '', until ?? '', String(maxCommits ?? 300)]);
+    const cacheKey = cacheService.cacheKey(['code-frequency', owner, repo, path ?? '', since ?? '', until ?? '', String(maxCommits ?? 100)]);
     const cached = cacheService.get(cacheKey);
     if (cached) {
       res.json(cached);

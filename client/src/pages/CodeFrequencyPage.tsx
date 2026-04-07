@@ -50,6 +50,8 @@ export default function CodeFrequencyPage() {
       }),
     enabled: !!owner && !!repo,
     staleTime: 5 * 60 * 1000,
+    retry: false,
+    gcTime: 10 * 60 * 1000,
   });
 
   const handlePathSelect = useCallback((path: string) => {
