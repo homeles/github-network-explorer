@@ -39,7 +39,10 @@ export default function AppLayout() {
   function selectRepo(repo: UserRepo) {
     setShowRepoDropdown(false);
     setSearchQuery('');
-    void navigate(`/app/repo/${repo.owner.login}/${repo.name}`);
+    // Preserve the current view when switching repos
+    const suffixes = ['/network', '/pulls', '/branches', '/settings', '/code-frequency'];
+    const currentSuffix = suffixes.find((s) => location.pathname.endsWith(s)) ?? '';
+    void navigate(`/app/repo/${repo.owner.login}/${repo.name}${currentSuffix}`);
   }
 
   const isOnCodeFrequencyPage = location.pathname.endsWith('/code-frequency');
