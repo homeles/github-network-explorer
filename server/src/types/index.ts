@@ -113,6 +113,21 @@ export interface GitHubUser {
   name: string | null;
 }
 
+export interface BranchInfo {
+  name: string;
+  isDefault: boolean;
+  lastCommitMessage: string;
+  lastCommitDate: string;
+  lastCommitAuthor: {
+    name: string | null;
+    login: string | null;
+    avatarUrl: string;
+  };
+  aheadBy: number;
+  behindBy: number;
+  isProtected: boolean;
+}
+
 // Extend express-session
 declare module 'express-session' {
   interface SessionData {

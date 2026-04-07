@@ -42,8 +42,16 @@ export default function AppLayout() {
     void navigate(`/app/repo/${repo.owner.login}/${repo.name}`);
   }
 
-  const isOnGraphPage = location.pathname.includes('/app/repo/') && !location.pathname.endsWith('/network');
+  const isOnGraphPage =
+    location.pathname.includes('/app/repo/') &&
+    !location.pathname.endsWith('/network') &&
+    !location.pathname.endsWith('/pulls') &&
+    !location.pathname.endsWith('/branches') &&
+    !location.pathname.endsWith('/settings');
   const isOnNetworkPage = location.pathname.endsWith('/network');
+  const isOnPullsPage = location.pathname.endsWith('/pulls');
+  const isOnBranchesPage = location.pathname.endsWith('/branches');
+  const isOnSettingsPage = location.pathname.endsWith('/settings');
 
   if (isLoading) {
     return (
@@ -342,9 +350,30 @@ export default function AppLayout() {
                 ? `/app/repo/${currentRepo.owner.login}/${currentRepo.name}/network`
                 : '/app',
             },
-            { icon: '📋', label: 'Pull Requests', active: false, href: '#' },
-            { icon: '🏷️', label: 'Branches', active: false, href: '#' },
-            { icon: '⚙️', label: 'Settings', active: false, href: '#' },
+            {
+              icon: '📋',
+              label: 'Pull Requests',
+              active: isOnPullsPage,
+              href: currentRepo
+                ? `/app/repo/${currentRepo.owner.login}/${currentRepo.name}/pulls`
+                : '/app',
+            },
+            {
+              icon: '🏷️',
+              label: 'Branches',
+              active: isOnBranchesPage,
+              href: currentRepo
+                ? `/app/repo/${currentRepo.owner.login}/${currentRepo.name}/branches`
+                : '/app',
+            },
+            {
+              icon: '⚙️',
+              label: 'Settings',
+              active: isOnSettingsPage,
+              href: currentRepo
+                ? `/app/repo/${currentRepo.owner.login}/${currentRepo.name}/settings`
+                : '/app',
+            },
           ].map((item) => (
             <Link
               key={item.label}
