@@ -56,11 +56,18 @@ export function useMultiBranchCommits(
     useInfiniteQuery({
       queryKey: ['multi-commits', owner, repo, branchesKey],
       queryFn: async ({ pageParam }: { pageParam: Record<string, string | undefined> }) => {
-        const results = await Promise.all(
-          branches.map((branch) =>
-            api.repos.commits(owner, repo, branch, pageParam[branch])
-          )
-        );
+        // Fetch branches in batches of 3 to avoid overwhelming the API
+        const BATCH_SIZE = 3;
+        const results: Awaited<ReturnType<typeof api.repos.commits>>[] = [];
+        for (let i = 0; i < branches.length; i += BATCH_SIZE) {
+          const batch = branches.slice(i, i + BATCH_SIZE);
+          const batchResults = await Promise.all(
+            batch.map((branch) =>
+              api.repos.commits(owner, repo, branch, pageParam[branch])
+            )
+          );
+          results.push(...batchResults);
+        }
         // Capture the branch list alongside results so getNextPageParam can map indices
         return { results, branches: [...branches] };
       },
