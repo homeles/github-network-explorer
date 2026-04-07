@@ -6,6 +6,8 @@ interface Props {
   data: DirectoryStats[];
   onPathSelect: (path: string) => void;
   currentPath: string;
+  owner: string;
+  repo: string;
 }
 
 interface TreeNode {
@@ -54,7 +56,7 @@ function buildTree(nodes: DirectoryStats[], currentPath: string): TreeNode {
   };
 }
 
-export default function DirectoryTreemap({ data, onPathSelect, currentPath }: Props) {
+export default function DirectoryTreemap({ data, onPathSelect, currentPath, owner, repo }: Props) {
   const svgRef = useRef<SVGSVGElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -184,7 +186,8 @@ export default function DirectoryTreemap({ data, onPathSelect, currentPath }: Pr
             `<div style="font-weight:600;margin-bottom:4px;font-family:monospace">${d.data.path}</div>` +
             `<div style="color:#3fb950">+${d.data.additions.toLocaleString()}</div>` +
             `<div style="color:#f85149">-${d.data.deletions.toLocaleString()}</div>` +
-            `<div style="color:#8b949e">±${d.data.value.toLocaleString()} total changes</div>`
+            `<div style="color:#8b949e">±${d.data.value.toLocaleString()} total changes</div>` +
+            `<div style="margin-top:4px"><a href="https://github.com/${owner}/${repo}/tree/HEAD/${d.data.path}" target="_blank" rel="noopener noreferrer" style="color:#58a6ff;font-size:0.75rem;text-decoration:none">View on GitHub ↗</a></div>`
           );
       })
       .on('mouseleave', () => tooltip.style('opacity', '0'));

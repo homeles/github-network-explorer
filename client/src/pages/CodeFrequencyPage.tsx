@@ -422,6 +422,8 @@ export default function CodeFrequencyPage() {
                   data={data.directoryBreakdown}
                   onPathSelect={handlePathSelect}
                   currentPath={pathFilter}
+                  owner={owner!}
+                  repo={repo!}
                 />
               </div>
             )}
@@ -439,6 +441,8 @@ export default function CodeFrequencyPage() {
                   files={data.topFiles}
                   pathFilter={pathFilter}
                   onPathSelect={handlePathSelect}
+                  owner={owner!}
+                  repo={repo!}
                 />
               </div>
             )}

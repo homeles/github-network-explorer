@@ -12,11 +12,13 @@ interface Props {
   files: TopFile[];
   pathFilter: string;
   onPathSelect: (path: string) => void;
+  owner: string;
+  repo: string;
 }
 
 type SortKey = 'changes' | 'additions' | 'deletions' | 'commitCount';
 
-export default function TopFilesTable({ files, pathFilter, onPathSelect }: Props) {
+export default function TopFilesTable({ files, pathFilter, onPathSelect, owner, repo }: Props) {
   const [sortKey, setSortKey] = useState<SortKey>('changes');
   const [sortAsc, setSortAsc] = useState(false);
 
@@ -110,27 +112,51 @@ export default function TopFilesTable({ files, pathFilter, onPathSelect }: Props
                   }}
                 >
                   <td style={{ ...tdStyle, fontFamily: 'monospace', fontSize: '0.75rem' }}>
-                    <button
-                      onClick={() => onPathSelect(parentDir)}
-                      title={f.path}
-                      style={{
-                        background: 'none',
-                        border: 'none',
-                        color: '#58a6ff',
-                        cursor: 'pointer',
-                        padding: 0,
-                        fontFamily: 'monospace',
-                        fontSize: '0.75rem',
-                        textAlign: 'left',
-                        maxWidth: '100%',
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        whiteSpace: 'nowrap',
-                        display: 'block',
-                      }}
-                    >
-                      {displayPath || f.path}
-                    </button>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
+                      <button
+                        onClick={() => onPathSelect(parentDir)}
+                        title={`Filter to ${parentDir || 'root'}`}
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          color: '#58a6ff',
+                          cursor: 'pointer',
+                          padding: 0,
+                          fontFamily: 'monospace',
+                          fontSize: '0.75rem',
+                          textAlign: 'left',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
+                          flex: 1,
+                          minWidth: 0,
+                        }}
+                      >
+                        {displayPath || f.path}
+                      </button>
+                      <a
+                        href={`https://github.com/${owner}/${repo}/blob/HEAD/${f.path}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        title="View on GitHub"
+                        onClick={(e) => e.stopPropagation()}
+                        style={{
+                          color: '#8b949e',
+                          fontSize: '0.75rem',
+                          flexShrink: 0,
+                          textDecoration: 'none',
+                          lineHeight: 1,
+                        }}
+                        onMouseOver={(e) => {
+                          (e.currentTarget as HTMLAnchorElement).style.color = '#58a6ff';
+                        }}
+                        onMouseOut={(e) => {
+                          (e.currentTarget as HTMLAnchorElement).style.color = '#8b949e';
+                        }}
+                      >
+                        ↗
+                      </a>
+                    </div>
                   </td>
                   <td style={{ ...tdStyle, textAlign: 'right', color: '#3fb950', fontVariantNumeric: 'tabular-nums' }}>
                     +{f.additions.toLocaleString()}
