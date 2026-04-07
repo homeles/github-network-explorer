@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { useParams } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../lib/api.js';
@@ -12,16 +12,16 @@ type TimeRange = '1m' | '3m' | '6m' | '1y' | 'all';
 
 function getDateRange(range: TimeRange): { since?: string; until?: string } {
   if (range === 'all') return {};
-  const until = new Date();
-  const since = new Date();
+  const now = new Date();
+  // Truncate to date only (no time) so the key stays stable within the same day
+  const untilDate = now.toISOString().slice(0, 10) + 'T23:59:59Z';
+  const since = new Date(now);
   if (range === '1m') since.setMonth(since.getMonth() - 1);
   else if (range === '3m') since.setMonth(since.getMonth() - 3);
   else if (range === '6m') since.setMonth(since.getMonth() - 6);
   else if (range === '1y') since.setFullYear(since.getFullYear() - 1);
-  return {
-    since: since.toISOString(),
-    until: until.toISOString(),
-  };
+  const sinceDate = since.toISOString().slice(0, 10) + 'T00:00:00Z';
+  return { since: sinceDate, until: untilDate };
 }
 
 const TIME_RANGE_LABELS: Record<TimeRange, string> = {
@@ -38,7 +38,7 @@ export default function CodeFrequencyPage() {
   const [timeRange, setTimeRange] = useState<TimeRange>('3m');
   const [pathFilter, setPathFilter] = useState('');
 
-  const { since, until } = getDateRange(timeRange);
+  const { since, until } = useMemo(() => getDateRange(timeRange), [timeRange]);
 
   const { data, isLoading, error, refetch } = useQuery({
     queryKey: ['code-frequency', owner, repo, since, until, pathFilter],
