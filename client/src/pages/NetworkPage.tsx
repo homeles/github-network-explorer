@@ -21,7 +21,6 @@ export default function NetworkPage() {
   const defaultBranch = overview?.defaultBranchRef?.name ?? 'main';
   const allBranchNames = overview?.branches.map((b) => b.name) ?? [];
 
-  // Reset when repo changes
   useEffect(() => {
     setSelectedBranches([]);
     setSelectedOid(null);
@@ -41,6 +40,16 @@ export default function NetworkPage() {
       ? allBranchNames
       : [];
 
+  // For the network graph, only fetch the default branch initially.
+  // Virtual (deleted) branches are reconstructed from main's merge commit
+  // topology — no need to fetch every branch separately.
+  // Other live branches (like demo) are added if explicitly selected.
+  const fetchBranches = effectiveBranches.includes(defaultBranch)
+    ? [defaultBranch, ...effectiveBranches.filter(
+        (b) => b !== defaultBranch
+      ).slice(0, 4)] // default + up to 4 other live branches
+    : effectiveBranches.slice(0, 5);
+
   const {
     commits,
     branchMap,
@@ -52,8 +61,8 @@ export default function NetworkPage() {
   } = useMultiBranchCommits(
     owner!,
     repo!,
-    effectiveBranches,
-    !!owner && !!repo && effectiveBranches.length > 0
+    fetchBranches,
+    !!owner && !!repo && fetchBranches.length > 0
   );
 
   const { commit: commitDetail, isLoading: detailLoading } = useCommitDetail(
@@ -115,7 +124,7 @@ export default function NetworkPage() {
           />
         </div>
 
-        {/* View label */}
+        {/* View label + commit count */}
         <div
           style={{
             display: 'flex',
@@ -132,6 +141,11 @@ export default function NetworkPage() {
           }}
         >
           🔀 Network View
+          {commits.length > 0 && (
+            <span style={{ color: '#8b949e', fontWeight: 400 }}>
+              · {commits.length} commits
+            </span>
+          )}
         </div>
 
         {overview && (
@@ -250,7 +264,7 @@ export default function NetworkPage() {
             </div>
           )}
 
-          {/* Load more */}
+          {/* Load more button */}
           {hasNextPage && commits.length > 0 && (
             <div
               style={{
@@ -258,6 +272,9 @@ export default function NetworkPage() {
                 bottom: 16,
                 left: '50%',
                 transform: 'translateX(-50%)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.75rem',
               }}
             >
               <button
@@ -272,9 +289,29 @@ export default function NetworkPage() {
                   fontSize: '0.875rem',
                   cursor: isFetchingNextPage ? 'not-allowed' : 'pointer',
                   opacity: isFetchingNextPage ? 0.6 : 1,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.5rem',
                 }}
               >
-                {isFetchingNextPage ? 'Loading more...' : 'Load more commits'}
+                {isFetchingNextPage ? (
+                  <>
+                    <span
+                      style={{
+                        width: 14,
+                        height: 14,
+                        border: '2px solid #21262d',
+                        borderTopColor: '#58a6ff',
+                        borderRadius: '50%',
+                        animation: 'spin 0.8s linear infinite',
+                        display: 'inline-block',
+                      }}
+                    />
+                    Loading more...
+                  </>
+                ) : (
+                  'Load more commits'
+                )}
               </button>
             </div>
           )}
