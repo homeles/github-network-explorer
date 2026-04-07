@@ -5,6 +5,7 @@ import { api } from '../lib/api.js';
 import type { PullRequest } from '../lib/api.js';
 
 type PRState = 'OPEN' | 'CLOSED' | 'MERGED';
+type SortMode = 'newest' | 'oldest' | 'most-comments' | 'most-reviews';
 
 function timeAgo(dateStr: string): string {
   const diff = Date.now() - new Date(dateStr).getTime();
@@ -209,6 +210,7 @@ function PRRow({ pr }: { pr: PullRequest }) {
 export default function PullRequestsPage() {
   const { owner, repo } = useParams<{ owner: string; repo: string }>();
   const [activeState, setActiveState] = useState<PRState>('OPEN');
+  const [sortMode, setSortMode] = useState<SortMode>('newest');
 
   const { data: prs, isLoading, error } = useQuery({
     queryKey: ['pulls', owner, repo, activeState],
@@ -237,6 +239,21 @@ export default function PullRequestsPage() {
     { label: 'Closed', value: 'CLOSED' },
     { label: 'Merged', value: 'MERGED' },
   ];
+
+  const sortedPrs = prs
+    ? [...prs].sort((a, b) => {
+        switch (sortMode) {
+          case 'oldest':
+            return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+          case 'most-comments':
+            return b.reviews.totalCount - a.reviews.totalCount;
+          case 'most-reviews':
+            return b.commits.totalCount - a.commits.totalCount;
+          default: // newest
+            return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+        }
+      })
+    : [];
 
   return (
     <div
@@ -269,6 +286,32 @@ export default function PullRequestsPage() {
         <span style={{ color: '#8b949e', fontSize: '0.875rem' }}>
           {owner}/{repo}
         </span>
+        <div style={{ flexGrow: 1 }} />
+        {/* Sort controls */}
+        <span style={{ color: '#8b949e', fontSize: '0.8125rem' }}>Sort:</span>
+        {(['newest', 'oldest', 'most-comments', 'most-reviews'] as SortMode[]).map((mode) => (
+          <button
+            key={mode}
+            onClick={() => setSortMode(mode)}
+            style={{
+              background: sortMode === mode ? 'rgba(88,166,255,0.15)' : 'transparent',
+              border: `1px solid ${sortMode === mode ? '#58a6ff' : '#30363d'}`,
+              borderRadius: 6,
+              color: sortMode === mode ? '#58a6ff' : '#8b949e',
+              padding: '0.25rem 0.625rem',
+              fontSize: '0.8125rem',
+              cursor: 'pointer',
+            }}
+          >
+            {mode === 'newest'
+              ? 'Newest'
+              : mode === 'oldest'
+                ? 'Oldest'
+                : mode === 'most-comments'
+                  ? 'Most reviews'
+                  : 'Most commits'}
+          </button>
+        ))}
       </div>
 
       {/* Tabs */}
@@ -359,7 +402,7 @@ export default function PullRequestsPage() {
           </div>
         ) : (
           <div>
-            {prs.map((pr) => (
+            {sortedPrs.map((pr) => (
               <PRRow key={pr.number} pr={pr} />
             ))}
           </div>
