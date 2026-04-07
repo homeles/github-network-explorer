@@ -121,6 +121,11 @@ export default function DirectoryTreemap({ data, onPathSelect, currentPath, owne
           onPathSelect(parent);
         }
       })
+      .on('contextmenu', (event: MouseEvent, d) => {
+        event.preventDefault();
+        const ghType = d.data.path.endsWith('/') ? 'tree' : 'blob';
+        window.open(`https://github.com/${owner}/${repo}/${ghType}/HEAD/${d.data.path}`, '_blank');
+      })
       .on('mouseover', function () {
         d3.select(this).attr('fill-opacity', 1);
       })
@@ -187,7 +192,7 @@ export default function DirectoryTreemap({ data, onPathSelect, currentPath, owne
             `<div style="color:#3fb950">+${d.data.additions.toLocaleString()}</div>` +
             `<div style="color:#f85149">-${d.data.deletions.toLocaleString()}</div>` +
             `<div style="color:#8b949e">±${d.data.value.toLocaleString()} total changes</div>` +
-            `<div style="margin-top:4px"><a href="https://github.com/${owner}/${repo}/tree/HEAD/${d.data.path}" target="_blank" rel="noopener noreferrer" style="color:#58a6ff;font-size:0.75rem;text-decoration:none">View on GitHub ↗</a></div>`
+            `<div style="margin-top:4px;color:#6e7681;font-size:0.6875rem">Click to drill down · Right-click to open on GitHub</div>`
           );
       })
       .on('mouseleave', () => tooltip.style('opacity', '0'));

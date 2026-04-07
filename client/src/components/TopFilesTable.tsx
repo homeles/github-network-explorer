@@ -112,7 +112,7 @@ export default function TopFilesTable({ files, pathFilter, onPathSelect, owner, 
                   }}
                 >
                   <td style={{ ...tdStyle, fontFamily: 'monospace', fontSize: '0.75rem' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.375rem', maxWidth: '100%' }}>
                       <button
                         onClick={() => onPathSelect(parentDir)}
                         title={`Filter to ${parentDir || 'root'}`}
@@ -128,8 +128,6 @@ export default function TopFilesTable({ files, pathFilter, onPathSelect, owner, 
                           overflow: 'hidden',
                           textOverflow: 'ellipsis',
                           whiteSpace: 'nowrap',
-                          flex: 1,
-                          minWidth: 0,
                         }}
                       >
                         {displayPath || f.path}
@@ -142,7 +140,7 @@ export default function TopFilesTable({ files, pathFilter, onPathSelect, owner, 
                         onClick={(e) => e.stopPropagation()}
                         style={{
                           color: '#8b949e',
-                          fontSize: '0.75rem',
+                          fontSize: '0.6875rem',
                           flexShrink: 0,
                           textDecoration: 'none',
                           lineHeight: 1,
@@ -156,7 +154,7 @@ export default function TopFilesTable({ files, pathFilter, onPathSelect, owner, 
                       >
                         ↗
                       </a>
-                    </div>
+                    </span>
                   </td>
                   <td style={{ ...tdStyle, textAlign: 'right', color: '#3fb950', fontVariantNumeric: 'tabular-nums' }}>
                     +{f.additions.toLocaleString()}
