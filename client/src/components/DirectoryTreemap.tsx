@@ -252,7 +252,7 @@ export default function DirectoryTreemap({ data, onPathSelect, currentPath, owne
       .on('mouseover', function () {
         d3.select(this).attr('fill-opacity', 1).attr('stroke', '#58a6ff').attr('stroke-width', 1);
       })
-      .on('mouseout', function (_, d) {
+      .on('mouseout', function () {
         d3.select(this).attr('fill-opacity', 0.75).attr('stroke', 'none');
       });
 
