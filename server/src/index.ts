@@ -5,6 +5,7 @@ import session from 'express-session';
 import path from 'path';
 import { authRouter } from './routes/auth.routes.js';
 import { repoRouter } from './routes/repo.routes.js';
+import { orgRouter } from './routes/org.routes.js';
 
 const app = express();
 const PORT = parseInt(process.env.PORT ?? '3001', 10);
@@ -48,6 +49,7 @@ app.use(
 // API routes
 app.use('/api/auth', authRouter);
 app.use('/api/repos', repoRouter);
+app.use('/api/orgs', orgRouter);
 
 // Health check
 app.get('/health', (_req, res) => {

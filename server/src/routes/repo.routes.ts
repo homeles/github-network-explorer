@@ -17,8 +17,32 @@ function str(param: string | string[] | undefined): string {
   return param ?? '';
 }
 
-// GET /api/repos - list user repos
+// GET /api/repos - list user repos (supports ?page=1&per_page=30 for paginated ReposPage response)
 router.get('/', async (req: Request, res: Response): Promise<void> => {
+  const pageParam = typeof req.query.page === 'string' ? req.query.page : undefined;
+  const perPageParam = typeof req.query.per_page === 'string' ? req.query.per_page : undefined;
+
+  if (pageParam !== undefined || perPageParam !== undefined) {
+    const page = parseInt(pageParam ?? '1', 10) || 1;
+    const perPage = parseInt(perPageParam ?? '30', 10) || 30;
+    const cacheKey = cacheService.cacheKey(['repos-paged', req.session.accessToken!.slice(-8), String(page), String(perPage)]);
+    const cached = cacheService.get(cacheKey);
+    if (cached) {
+      res.json(cached);
+      return;
+    }
+    try {
+      const service = getGitHubService(req);
+      const data = await service.getUserOwnRepos(page, perPage);
+      cacheService.set(cacheKey, data, 120);
+      res.json(data);
+    } catch (err) {
+      console.error('Get repos error:', err);
+      res.status(500).json({ error: 'Failed to fetch repositories' });
+    }
+    return;
+  }
+
   const cacheKey = cacheService.cacheKey([
     'repos',
     req.session.accessToken!.slice(-8),

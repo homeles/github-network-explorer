@@ -10,7 +10,7 @@ router.post('/github', (req: Request, res: Response): void => {
 
   const clientId = process.env.GITHUB_CLIENT_ID ?? '';
   const redirectUri = `${process.env.SERVER_URL ?? 'http://localhost:3001'}/api/auth/callback`;
-  const scope = 'repo read:user';
+  const scope = 'repo read:user read:org';
 
   const authUrl = new URL('https://github.com/login/oauth/authorize');
   authUrl.searchParams.set('client_id', clientId);
