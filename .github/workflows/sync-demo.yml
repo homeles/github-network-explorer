@@ -1,0 +1,90 @@
+name: Sync Demo Branch
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'client/src/components/**'
+      - 'client/src/lib/dag.ts'
+      - 'client/src/lib/network-dag.ts'
+      - 'client/src/hooks/useSettings.ts'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          path: main
+
+      - name: Checkout demo branch
+        uses: actions/checkout@v4
+        with:
+          ref: demo
+          path: demo
+
+      - name: Sync shared files from main to demo
+        run: |
+          # Components that are shared (copied from client, imports adapted)
+          COMPONENTS=(
+            BranchSelector.tsx
+            CodeFrequencyChart.tsx
+            CommitDetail.tsx
+            ContributorsChart.tsx
+            DirectoryTreemap.tsx
+            GraphVisualization.tsx
+            NetworkGraphVisualization.tsx
+            TopFilesTable.tsx
+          )
+
+          for file in "${COMPONENTS[@]}"; do
+            if [ -f "main/client/src/components/$file" ]; then
+              cp "main/client/src/components/$file" "demo/src/components/$file"
+            fi
+          done
+
+          # Shared lib files (no import changes needed)
+          for file in dag.ts network-dag.ts; do
+            if [ -f "main/client/src/lib/$file" ]; then
+              cp "main/client/src/lib/$file" "demo/src/lib/$file"
+            fi
+          done
+
+          # Shared hooks
+          if [ -f "main/client/src/hooks/useSettings.ts" ]; then
+            cp "main/client/src/hooks/useSettings.ts" "demo/src/hooks/useSettings.ts"
+          fi
+
+          # Fix imports: ../lib/api.js → ../lib/github-api.js
+          find demo/src -name '*.tsx' -o -name '*.ts' | xargs sed -i "s|from '../lib/api.js'|from '../lib/github-api.js'|g"
+
+      - name: Check for changes
+        id: changes
+        working-directory: demo
+        run: |
+          git diff --quiet && echo "changed=false" >> "$GITHUB_OUTPUT" || echo "changed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Install and build demo
+        if: steps.changes.outputs.changed == 'true'
+        working-directory: demo
+        run: |
+          corepack enable
+          pnpm install --no-frozen-lockfile
+          pnpm build
+
+      - name: Commit and push
+        if: steps.changes.outputs.changed == 'true'
+        working-directory: demo
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          MAIN_SHA=$(cd ../main && git rev-parse --short HEAD)
+          git commit -m "sync: update components from main ($MAIN_SHA)"
+          git push origin demo
