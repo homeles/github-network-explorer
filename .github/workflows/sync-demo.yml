@@ -61,8 +61,9 @@ jobs:
             cp "main/client/src/hooks/useSettings.ts" "demo/src/hooks/useSettings.ts"
           fi
 
-          # Fix imports: ../lib/api.js → ../lib/github-api.js
+          # Fix imports: api.js → github-api.js (handles both ../lib/api.js and ./api.js)
           find demo/src -name '*.tsx' -o -name '*.ts' | xargs sed -i "s|from '../lib/api.js'|from '../lib/github-api.js'|g"
+          find demo/src -name '*.tsx' -o -name '*.ts' | xargs sed -i "s|from './api.js'|from './github-api.js'|g"
 
       - name: Check for changes
         id: changes
