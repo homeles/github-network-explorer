@@ -39,15 +39,20 @@ export default function AppLayout() {
   function selectRepo(repo: UserRepo) {
     setShowRepoDropdown(false);
     setSearchQuery('');
-    void navigate(`/app/repo/${repo.owner.login}/${repo.name}`);
+    // Preserve the current view when switching repos
+    const suffixes = ['/network', '/pulls', '/branches', '/settings', '/code-frequency'];
+    const currentSuffix = suffixes.find((s) => location.pathname.endsWith(s)) ?? '';
+    void navigate(`/app/repo/${repo.owner.login}/${repo.name}${currentSuffix}`);
   }
 
+  const isOnCodeFrequencyPage = location.pathname.endsWith('/code-frequency');
   const isOnGraphPage =
     location.pathname.includes('/app/repo/') &&
     !location.pathname.endsWith('/network') &&
     !location.pathname.endsWith('/pulls') &&
     !location.pathname.endsWith('/branches') &&
-    !location.pathname.endsWith('/settings');
+    !location.pathname.endsWith('/settings') &&
+    !isOnCodeFrequencyPage;
   const isOnNetworkPage = location.pathname.endsWith('/network');
   const isOnPullsPage = location.pathname.endsWith('/pulls');
   const isOnBranchesPage = location.pathname.endsWith('/branches');
@@ -364,6 +369,14 @@ export default function AppLayout() {
               active: isOnBranchesPage,
               href: currentRepo
                 ? `/app/repo/${currentRepo.owner.login}/${currentRepo.name}/branches`
+                : '/app',
+            },
+            {
+              icon: '📈',
+              label: 'Code Frequency',
+              active: isOnCodeFrequencyPage,
+              href: currentRepo
+                ? `/app/repo/${currentRepo.owner.login}/${currentRepo.name}/code-frequency`
                 : '/app',
             },
             {

@@ -188,4 +188,34 @@ router.get(
   }
 );
 
+// GET /api/repos/:owner/:repo/code-frequency
+router.get(
+  '/:owner/:repo/code-frequency',
+  async (req: Request, res: Response): Promise<void> => {
+    const owner = str(req.params['owner']);
+    const repo = str(req.params['repo']);
+    const since = typeof req.query.since === 'string' ? req.query.since : undefined;
+    const until = typeof req.query.until === 'string' ? req.query.until : undefined;
+    const path = typeof req.query.path === 'string' ? req.query.path : undefined;
+    const maxCommits = typeof req.query.maxCommits === 'string' ? parseInt(req.query.maxCommits, 10) : undefined;
+
+    const cacheKey = cacheService.cacheKey(['code-frequency', owner, repo, path ?? '', since ?? '', until ?? '', String(maxCommits ?? 100)]);
+    const cached = cacheService.get(cacheKey);
+    if (cached) {
+      res.json(cached);
+      return;
+    }
+
+    try {
+      const service = getGitHubService(req);
+      const data = await service.getCodeFrequency(owner, repo, { since, until, path, maxCommits });
+      cacheService.set(cacheKey, data, 300);
+      res.json(data);
+    } catch (err) {
+      console.error('Get code frequency error:', err);
+      res.status(500).json({ error: 'Failed to fetch code frequency data' });
+    }
+  }
+);
+
 export { router as repoRouter };
