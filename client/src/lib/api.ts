@@ -212,14 +212,10 @@ export const api = {
       apiFetch<ReposPage>(`/api/orgs/${encodeURIComponent(org)}/repos?page=${page}&per_page=${perPage}`),
   },
   repos: {
-    list: (page?: number, perPage?: number) => {
-      if (page !== undefined || perPage !== undefined) {
-        const p = page ?? 1;
-        const pp = perPage ?? 30;
-        return apiFetch<ReposPage>(`/api/repos?page=${p}&per_page=${pp}`);
-      }
-      return apiFetch<UserRepo[]>('/api/repos');
-    },
+    /** @deprecated Use listPaged for paginated results */
+    list: () => apiFetch<UserRepo[]>('/api/repos'),
+    listPaged: (page = 1, perPage = 30) =>
+      apiFetch<ReposPage>(`/api/repos?page=${page}&per_page=${perPage}`),
     overview: (owner: string, repo: string) =>
       apiFetch<RepoOverview>(`/api/repos/${owner}/${repo}/overview`),
     commits: (owner: string, repo: string, branch: string, cursor?: string) =>

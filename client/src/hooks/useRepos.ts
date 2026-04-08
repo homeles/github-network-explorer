@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { useState, useEffect } from 'react';
 import { api } from '../lib/api.js';
-import type { UserRepo, UserOrg, ReposPage } from '../lib/api.js';
+import type { UserRepo, ReposPage } from '../lib/api.js';
 
 /** @deprecated Use useOrgRepos instead */
 export function useRepos(enabled = true) {
@@ -53,7 +53,7 @@ export function useOrgRepos(owner: string | null, userLogin: string | null, enab
     queryKey: isPersonal ? ['repos-paged', page] : ['org-repos', owner, page],
     queryFn: () =>
       isPersonal
-        ? (api.repos.list(page, 30) as Promise<ReposPage>)
+        ? api.repos.listPaged(page, 30)
         : api.orgs.repos(owner!, page, 30),
     staleTime: 2 * 60 * 1000,
     enabled: enabled && (isPersonal || owner !== null),
