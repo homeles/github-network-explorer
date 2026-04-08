@@ -110,6 +110,19 @@ export interface AuthStatus {
   };
 }
 
+export interface UserOrg {
+  login: string;
+  avatar_url: string;
+  description: string | null;
+}
+
+export interface ReposPage {
+  repos: UserRepo[];
+  page: number;
+  per_page: number;
+  has_next_page: boolean;
+}
+
 async function apiFetch<T>(url: string, options?: RequestInit): Promise<T> {
   const response = await fetch(url, {
     credentials: 'include',
@@ -134,7 +147,8 @@ export const api = {
     logout: () => apiFetch<{ success: boolean }>('/api/auth/logout', { method: 'POST' }),
   },
   repos: {
-    list: () => apiFetch<UserRepo[]>('/api/repos'),
+    list: (page = 1, perPage = 30) =>
+      apiFetch<ReposPage>(`/api/repos?type=owner&page=${page}&per_page=${perPage}`),
     overview: (owner: string, repo: string) =>
       apiFetch<RepoOverview>(`/api/repos/${owner}/${repo}/overview`),
     commits: (owner: string, repo: string, branch: string, cursor?: string) =>
@@ -145,5 +159,10 @@ export const api = {
       apiFetch<CommitDetail>(`/api/repos/${owner}/${repo}/commit/${sha}`),
     pullRequests: (owner: string, repo: string, state = 'OPEN') =>
       apiFetch<PullRequest[]>(`/api/repos/${owner}/${repo}/pulls?state=${state}`),
+  },
+  orgs: {
+    list: () => apiFetch<UserOrg[]>('/api/orgs'),
+    repos: (org: string, page = 1, perPage = 30) =>
+      apiFetch<ReposPage>(`/api/orgs/${encodeURIComponent(org)}/repos?page=${page}&per_page=${perPage}`),
   },
 };

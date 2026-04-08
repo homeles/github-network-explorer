@@ -113,6 +113,19 @@ export interface GitHubUser {
   name: string | null;
 }
 
+export interface UserOrg {
+  login: string;
+  avatar_url: string;
+  description: string | null;
+}
+
+export interface ReposPage {
+  repos: UserRepo[];
+  page: number;
+  per_page: number;
+  has_next_page: boolean;
+}
+
 // Extend express-session
 declare module 'express-session' {
   interface SessionData {

@@ -17,12 +17,24 @@ function str(param: string | string[] | undefined): string {
   return param ?? '';
 }
 
-// GET /api/repos - list user repos
+function num(param: string | string[] | undefined, fallback: number): number {
+  const raw = Array.isArray(param) ? param[0] : param;
+  const parsed = parseInt(raw ?? '', 10);
+  return isNaN(parsed) ? fallback : parsed;
+}
+
+// GET /api/repos - list user repos (paginated when ?type=owner&page=&per_page=)
 router.get('/', async (req: Request, res: Response): Promise<void> => {
-  const cacheKey = cacheService.cacheKey([
-    'repos',
-    req.session.accessToken!.slice(-8),
-  ]);
+  const type = str(req.query.type as string | undefined);
+  const page = num(req.query.page as string | undefined, 1);
+  const perPage = num(req.query.per_page as string | undefined, 30);
+  const paginated = type === 'owner';
+
+  const cacheKey = cacheService.cacheKey(
+    paginated
+      ? ['repos-own', req.session.accessToken!.slice(-8), String(page), String(perPage)]
+      : ['repos', req.session.accessToken!.slice(-8)]
+  );
   const cached = cacheService.get(cacheKey);
   if (cached) {
     res.json(cached);
@@ -31,9 +43,15 @@ router.get('/', async (req: Request, res: Response): Promise<void> => {
 
   try {
     const service = getGitHubService(req);
-    const repos = await service.getUserRepos();
-    cacheService.set(cacheKey, repos, 120);
-    res.json(repos);
+    if (paginated) {
+      const result = await service.getUserOwnRepos(page, perPage);
+      cacheService.set(cacheKey, result, 120);
+      res.json(result);
+    } else {
+      const repos = await service.getUserRepos();
+      cacheService.set(cacheKey, repos, 120);
+      res.json(repos);
+    }
   } catch (err) {
     console.error('Get repos error:', err);
     res.status(500).json({ error: 'Failed to fetch repositories' });

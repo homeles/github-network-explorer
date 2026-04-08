@@ -6,6 +6,8 @@ import type {
   CommitDetail,
   PullRequestSummary,
   UserRepo,
+  UserOrg,
+  ReposPage,
 } from '../types/index.js';
 
 export class GitHubService {
@@ -259,6 +261,7 @@ export class GitHubService {
     return result.repository.pullRequests.nodes;
   }
 
+  /** @deprecated Use getUserOwnRepos with pagination instead */
   async getUserRepos(): Promise<UserRepo[]> {
     const response = await this.octokit.request('GET /user/repos', {
       sort: 'updated',
@@ -276,5 +279,69 @@ export class GitHubService {
       default_branch: r.default_branch ?? 'main',
       updated_at: r.updated_at ?? '',
     }));
+  }
+
+  async getUserOrgs(): Promise<UserOrg[]> {
+    const orgs = await this.octokit.paginate('GET /user/orgs', {
+      per_page: 100,
+    });
+
+    return orgs.map((o) => ({
+      login: o.login,
+      avatar_url: o.avatar_url,
+      description: (o as { description?: string | null }).description ?? null,
+    }));
+  }
+
+  async getOrgRepos(org: string, page: number, perPage: number): Promise<ReposPage> {
+    const response = await this.octokit.request('GET /orgs/{org}/repos', {
+      org,
+      sort: 'updated',
+      page,
+      per_page: perPage,
+    });
+
+    return {
+      repos: response.data.map((r) => ({
+        name: r.name,
+        full_name: r.full_name,
+        owner: { login: r.owner?.login ?? '' },
+        description: r.description ?? null,
+        private: r.private,
+        stargazers_count: r.stargazers_count ?? 0,
+        forks_count: r.forks_count ?? 0,
+        default_branch: r.default_branch ?? 'main',
+        updated_at: r.updated_at ?? '',
+      })),
+      page,
+      per_page: perPage,
+      has_next_page: response.data.length === perPage,
+    };
+  }
+
+  async getUserOwnRepos(page: number, perPage: number): Promise<ReposPage> {
+    const response = await this.octokit.request('GET /user/repos', {
+      type: 'owner',
+      sort: 'updated',
+      page,
+      per_page: perPage,
+    });
+
+    return {
+      repos: response.data.map((r) => ({
+        name: r.name,
+        full_name: r.full_name,
+        owner: { login: r.owner?.login ?? '' },
+        description: r.description ?? null,
+        private: r.private,
+        stargazers_count: r.stargazers_count ?? 0,
+        forks_count: r.forks_count ?? 0,
+        default_branch: r.default_branch ?? 'main',
+        updated_at: r.updated_at ?? '',
+      })),
+      page,
+      per_page: perPage,
+      has_next_page: response.data.length === perPage,
+    };
   }
 }
