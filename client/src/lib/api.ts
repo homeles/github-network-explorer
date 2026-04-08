@@ -87,6 +87,19 @@ export interface UserRepo {
   updated_at: string;
 }
 
+export interface UserOrg {
+  login: string;
+  avatar_url: string;
+  description: string | null;
+}
+
+export interface ReposPage {
+  repos: UserRepo[];
+  page: number;
+  per_page: number;
+  has_next_page: boolean;
+}
+
 export interface PullRequest {
   number: number;
   title: string;
@@ -193,8 +206,16 @@ export const api = {
       apiFetch<{ url: string }>('/api/auth/github', { method: 'POST' }),
     logout: () => apiFetch<{ success: boolean }>('/api/auth/logout', { method: 'POST' }),
   },
+  orgs: {
+    list: () => apiFetch<UserOrg[]>('/api/orgs'),
+    repos: (org: string, page = 1, perPage = 30) =>
+      apiFetch<ReposPage>(`/api/orgs/${encodeURIComponent(org)}/repos?page=${page}&per_page=${perPage}`),
+  },
   repos: {
+    /** @deprecated Use listPaged for paginated results */
     list: () => apiFetch<UserRepo[]>('/api/repos'),
+    listPaged: (page = 1, perPage = 30) =>
+      apiFetch<ReposPage>(`/api/repos?page=${page}&per_page=${perPage}`),
     overview: (owner: string, repo: string) =>
       apiFetch<RepoOverview>(`/api/repos/${owner}/${repo}/overview`),
     commits: (owner: string, repo: string, branch: string, cursor?: string) =>

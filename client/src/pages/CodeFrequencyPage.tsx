@@ -41,12 +41,13 @@ export default function CodeFrequencyPage() {
   const { since, until } = useMemo(() => getDateRange(timeRange), [timeRange]);
 
   const { data, isLoading, error, refetch } = useQuery({
-    queryKey: ['code-frequency', owner, repo, since, until, pathFilter],
+    queryKey: ['code-frequency', owner, repo, since, until, pathFilter, timeRange],
     queryFn: () =>
       api.repos.codeFrequency(owner!, repo!, {
         since,
         until,
         path: pathFilter || undefined,
+        maxCommits: timeRange === 'all' ? 5000 : undefined,
       }),
     enabled: !!owner && !!repo,
     staleTime: 5 * 60 * 1000,

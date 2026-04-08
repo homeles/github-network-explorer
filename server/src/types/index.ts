@@ -90,6 +90,19 @@ export interface UserRepo {
   updated_at: string;
 }
 
+export interface UserOrg {
+  login: string;
+  avatar_url: string;
+  description: string | null;
+}
+
+export interface ReposPage {
+  repos: UserRepo[];
+  page: number;
+  per_page: number;
+  has_next_page: boolean;
+}
+
 export interface PullRequestSummary {
   number: number;
   title: string;

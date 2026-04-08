@@ -1,26 +1,52 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Outlet, useNavigate, useParams, Link, useLocation } from 'react-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../hooks/useAuth.js';
-import { useRepos } from '../hooks/useRepos.js';
+import { useOrgs, useOrgRepos } from '../hooks/useRepos.js';
 import { api } from '../lib/api.js';
-import type { UserRepo } from '../lib/api.js';
+import type { UserRepo, UserOrg } from '../lib/api.js';
 
 export default function AppLayout() {
   const { isAuthenticated, user, isLoading } = useAuth();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const { repos, isLoading: reposLoading } = useRepos(isAuthenticated);
-  const [showRepoDropdown, setShowRepoDropdown] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
   const params = useParams();
   const location = useLocation();
+
+  const [selectedOwner, setSelectedOwner] = useState<string | null>(null);
+  const [showOrgDropdown, setShowOrgDropdown] = useState(false);
+  const [showRepoDropdown, setShowRepoDropdown] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+
+  const orgDropdownRef = useRef<HTMLDivElement>(null);
+  const repoDropdownRef = useRef<HTMLDivElement>(null);
+
+  const { orgs, isLoading: orgsLoading } = useOrgs(isAuthenticated);
+  const { repos, isLoading: reposLoading, hasNextPage, loadMore } = useOrgRepos(
+    selectedOwner,
+    user?.login ?? null,
+    isAuthenticated
+  );
 
   useEffect(() => {
     if (!isLoading && !isAuthenticated) {
       void navigate('/');
     }
   }, [isAuthenticated, isLoading, navigate]);
+
+  // Close dropdowns on outside click
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (orgDropdownRef.current && !orgDropdownRef.current.contains(e.target as Node)) {
+        setShowOrgDropdown(false);
+      }
+      if (repoDropdownRef.current && !repoDropdownRef.current.contains(e.target as Node)) {
+        setShowRepoDropdown(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, []);
 
   const currentRepo = params.owner && params.repo
     ? repos.find((r) => r.owner.login === params.owner && r.name === params.repo)
@@ -36,14 +62,28 @@ export default function AppLayout() {
     void navigate('/');
   }
 
+  function selectOrg(owner: string | null) {
+    setShowOrgDropdown(false);
+    setSelectedOwner(owner);
+    // If current repo doesn't belong to new owner, navigate to /app
+    if (params.owner && params.owner !== (owner ?? user?.login)) {
+      void navigate('/app');
+    }
+  }
+
   function selectRepo(repo: UserRepo) {
     setShowRepoDropdown(false);
     setSearchQuery('');
-    // Preserve the current view when switching repos
     const suffixes = ['/network', '/pulls', '/branches', '/settings', '/code-frequency'];
     const currentSuffix = suffixes.find((s) => location.pathname.endsWith(s)) ?? '';
     void navigate(`/app/repo/${repo.owner.login}/${repo.name}${currentSuffix}`);
   }
+
+  const isPersonal = selectedOwner === null || selectedOwner === user?.login;
+  const displayOwner = isPersonal ? user?.login : selectedOwner;
+  const selectedOrg: UserOrg | null = isPersonal
+    ? null
+    : (orgs.find((o) => o.login === selectedOwner) ?? null);
 
   const isOnCodeFrequencyPage = location.pathname.endsWith('/code-frequency');
   const isOnGraphPage =
@@ -94,7 +134,7 @@ export default function AppLayout() {
           display: 'flex',
           alignItems: 'center',
           padding: '0 1rem',
-          gap: '1rem',
+          gap: '0.5rem',
           flexShrink: 0,
           zIndex: 100,
         }}
@@ -124,11 +164,135 @@ export default function AppLayout() {
             height: 24,
             background: '#30363d',
             flexShrink: 0,
+            marginLeft: '0.5rem',
           }}
         />
 
-        {/* Repo selector */}
-        <div style={{ position: 'relative', flexShrink: 0 }}>
+        {/* Organization Dropdown */}
+        <div ref={orgDropdownRef} style={{ position: 'relative', flexShrink: 0 }}>
+          <button
+            onClick={() => setShowOrgDropdown((v) => !v)}
+            style={{
+              background: '#0d1117',
+              border: '1px solid #30363d',
+              borderRadius: 8,
+              color: '#dfe2eb',
+              padding: '0.375rem 0.75rem',
+              fontSize: '0.875rem',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.5rem',
+              width: 180,
+            }}
+          >
+            {isPersonal && user ? (
+              <img
+                src={user.avatarUrl}
+                alt={user.login}
+                style={{ width: 20, height: 20, borderRadius: '50%', flexShrink: 0 }}
+              />
+            ) : selectedOrg ? (
+              <img
+                src={selectedOrg.avatar_url}
+                alt={selectedOrg.login}
+                style={{ width: 20, height: 20, borderRadius: '50%', flexShrink: 0 }}
+              />
+            ) : null}
+            <span style={{ flexGrow: 1, textAlign: 'left', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {isPersonal ? 'Personal' : (selectedOwner ?? 'Personal')}
+            </span>
+            <span style={{ color: '#8b949e', flexShrink: 0 }}>▾</span>
+          </button>
+
+          {showOrgDropdown && (
+            <div
+              style={{
+                position: 'absolute',
+                top: '100%',
+                left: 0,
+                marginTop: 4,
+                background: '#161b22',
+                border: '1px solid #30363d',
+                borderRadius: 8,
+                width: 220,
+                maxHeight: 360,
+                overflowY: 'auto',
+                boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
+                zIndex: 200,
+              }}
+            >
+              {/* Personal option */}
+              <button
+                onClick={() => selectOrg(null)}
+                style={{
+                  width: '100%',
+                  padding: '0.5rem 0.75rem',
+                  background: isPersonal ? '#1f2937' : 'transparent',
+                  border: 'none',
+                  color: '#dfe2eb',
+                  cursor: 'pointer',
+                  textAlign: 'left',
+                  fontSize: '0.875rem',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.5rem',
+                }}
+                onMouseOver={(e) => { (e.currentTarget as HTMLButtonElement).style.background = '#1f2937'; }}
+                onMouseOut={(e) => { (e.currentTarget as HTMLButtonElement).style.background = isPersonal ? '#1f2937' : 'transparent'; }}
+              >
+                {user && (
+                  <img
+                    src={user.avatarUrl}
+                    alt={user.login}
+                    style={{ width: 20, height: 20, borderRadius: '50%', flexShrink: 0 }}
+                  />
+                )}
+                <span>Personal</span>
+              </button>
+
+              {orgsLoading ? (
+                <div style={{ padding: '0.75rem', color: '#8b949e', fontSize: '0.8125rem', textAlign: 'center' }}>
+                  Loading...
+                </div>
+              ) : (
+                orgs.map((org) => (
+                  <button
+                    key={org.login}
+                    onClick={() => selectOrg(org.login)}
+                    style={{
+                      width: '100%',
+                      padding: '0.5rem 0.75rem',
+                      background: selectedOwner === org.login ? '#1f2937' : 'transparent',
+                      border: 'none',
+                      color: '#dfe2eb',
+                      cursor: 'pointer',
+                      textAlign: 'left',
+                      fontSize: '0.875rem',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.5rem',
+                    }}
+                    onMouseOver={(e) => { (e.currentTarget as HTMLButtonElement).style.background = '#1f2937'; }}
+                    onMouseOut={(e) => { (e.currentTarget as HTMLButtonElement).style.background = selectedOwner === org.login ? '#1f2937' : 'transparent'; }}
+                  >
+                    <img
+                      src={org.avatar_url}
+                      alt={org.login}
+                      style={{ width: 20, height: 20, borderRadius: '50%', flexShrink: 0 }}
+                    />
+                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {org.login}
+                    </span>
+                  </button>
+                ))
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Repo Dropdown */}
+        <div ref={repoDropdownRef} style={{ position: 'relative', flexShrink: 0 }}>
           <button
             onClick={() => setShowRepoDropdown((v) => !v)}
             style={{
@@ -142,13 +306,15 @@ export default function AppLayout() {
               display: 'flex',
               alignItems: 'center',
               gap: '0.5rem',
-              minWidth: 200,
+              width: 320,
             }}
           >
-            <span style={{ flexGrow: 1, textAlign: 'left' }}>
-              {currentRepo ? currentRepo.full_name : 'Select repository...'}
+            <span style={{ flexGrow: 1, textAlign: 'left', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {currentRepo
+                ? currentRepo.name
+                : `Select repository... (${repos.length}${hasNextPage ? '+' : ''})`}
             </span>
-            <span style={{ color: '#8b949e' }}>▾</span>
+            <span style={{ color: '#8b949e', flexShrink: 0 }}>▾</span>
           </button>
 
           {showRepoDropdown && (
@@ -173,7 +339,7 @@ export default function AppLayout() {
               <div style={{ padding: '0.5rem' }}>
                 <input
                   autoFocus
-                  placeholder="Search repositories..."
+                  placeholder={`Search ${displayOwner ?? ''} repositories...`}
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   style={{
@@ -190,7 +356,7 @@ export default function AppLayout() {
                 />
               </div>
               <div style={{ overflowY: 'auto', maxHeight: 340 }}>
-                {reposLoading ? (
+                {reposLoading && repos.length === 0 ? (
                   <div
                     style={{
                       padding: '1rem',
@@ -234,19 +400,16 @@ export default function AppLayout() {
                         gap: 2,
                       }}
                       onMouseOver={(e) => {
-                        (e.currentTarget as HTMLButtonElement).style.background =
-                          '#1f2937';
+                        (e.currentTarget as HTMLButtonElement).style.background = '#1f2937';
                       }}
                       onMouseOut={(e) => {
                         (e.currentTarget as HTMLButtonElement).style.background =
-                          currentRepo?.full_name === repo.full_name
-                            ? '#1f2937'
-                            : 'transparent';
+                          currentRepo?.full_name === repo.full_name ? '#1f2937' : 'transparent';
                       }}
                     >
                       <span style={{ fontWeight: 500 }}>
                         {repo.private ? '🔒 ' : ''}
-                        {repo.full_name}
+                        {repo.name}
                       </span>
                       {repo.description && (
                         <span
@@ -263,6 +426,25 @@ export default function AppLayout() {
                       )}
                     </button>
                   ))
+                )}
+                {hasNextPage && !searchQuery && (
+                  <button
+                    onClick={loadMore}
+                    disabled={reposLoading}
+                    style={{
+                      width: '100%',
+                      padding: '0.5rem 0.75rem',
+                      background: 'transparent',
+                      border: 'none',
+                      borderTop: '1px solid #30363d',
+                      color: reposLoading ? '#8b949e' : '#58a6ff',
+                      cursor: reposLoading ? 'default' : 'pointer',
+                      fontSize: '0.8125rem',
+                      textAlign: 'center',
+                    }}
+                  >
+                    {reposLoading ? 'Loading...' : 'Load more'}
+                  </button>
                 )}
               </div>
             </div>
@@ -307,13 +489,11 @@ export default function AppLayout() {
               }}
               onMouseOver={(e) => {
                 (e.currentTarget as HTMLButtonElement).style.color = '#f85149';
-                (e.currentTarget as HTMLButtonElement).style.borderColor =
-                  '#f85149';
+                (e.currentTarget as HTMLButtonElement).style.borderColor = '#f85149';
               }}
               onMouseOut={(e) => {
                 (e.currentTarget as HTMLButtonElement).style.color = '#8b949e';
-                (e.currentTarget as HTMLButtonElement).style.borderColor =
-                  '#30363d';
+                (e.currentTarget as HTMLButtonElement).style.borderColor = '#30363d';
               }}
             >
               Sign out
@@ -430,18 +610,6 @@ export default function AppLayout() {
           )}
         </main>
       </div>
-
-      {/* Click-outside handler for dropdown */}
-      {showRepoDropdown && (
-        <div
-          style={{
-            position: 'fixed',
-            inset: 0,
-            zIndex: 99,
-          }}
-          onClick={() => setShowRepoDropdown(false)}
-        />
-      )}
     </div>
   );
 }
