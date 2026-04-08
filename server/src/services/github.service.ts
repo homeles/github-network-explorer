@@ -27,6 +27,7 @@ export class GitHubService {
   }
 
   async getRepoOverview(owner: string, repo: string): Promise<RepoOverview> {
+    // First query: repo metadata + first page of branches/tags
     const query = `
       query($owner: String!, $repo: String!) {
         repository(owner: $owner, name: $repo) {
@@ -36,6 +37,10 @@ export class GitHubService {
           branches: refs(refPrefix: "refs/heads/", first: 100) {
             nodes {
               name
+            }
+            pageInfo {
+              hasNextPage
+              endCursor
             }
           }
           tags: refs(refPrefix: "refs/tags/", first: 100) {
@@ -57,7 +62,10 @@ export class GitHubService {
     const result = await this.graphqlWithAuth<{
       repository: {
         defaultBranchRef: { name: string } | null;
-        branches: { nodes: { name: string }[] };
+        branches: {
+          nodes: { name: string }[];
+          pageInfo: { hasNextPage: boolean; endCursor: string | null };
+        };
         tags: { nodes: { name: string }[] };
         stargazerCount: number;
         forkCount: number;
@@ -68,9 +76,42 @@ export class GitHubService {
     }>(query, { owner, repo });
 
     const r = result.repository;
+    const allBranches = [...r.branches.nodes];
+
+    // Paginate remaining branches if any
+    let pageInfo = r.branches.pageInfo;
+    while (pageInfo.hasNextPage && pageInfo.endCursor) {
+      const pageQuery = `
+        query($owner: String!, $repo: String!, $cursor: String!) {
+          repository(owner: $owner, name: $repo) {
+            refs(refPrefix: "refs/heads/", first: 100, after: $cursor) {
+              nodes {
+                name
+              }
+              pageInfo {
+                hasNextPage
+                endCursor
+              }
+            }
+          }
+        }
+      `;
+      const pageResult = await this.graphqlWithAuth<{
+        repository: {
+          refs: {
+            nodes: { name: string }[];
+            pageInfo: { hasNextPage: boolean; endCursor: string | null };
+          };
+        };
+      }>(pageQuery, { owner, repo, cursor: pageInfo.endCursor });
+
+      allBranches.push(...pageResult.repository.refs.nodes);
+      pageInfo = pageResult.repository.refs.pageInfo;
+    }
+
     return {
       defaultBranchRef: r.defaultBranchRef,
-      branches: r.branches.nodes,
+      branches: allBranches,
       tags: r.tags.nodes,
       stargazerCount: r.stargazerCount,
       forkCount: r.forkCount,
