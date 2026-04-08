@@ -375,7 +375,7 @@ export class GitHubService {
       maxCommits?: number;
     } = {}
   ): Promise<CodeFrequencyData> {
-    const maxCommits = Math.min(options.maxCommits ?? 100, 500);
+    const maxCommits = Math.min(options.maxCommits ?? 500, 5000);
     const since = options.since;
     const until = options.until;
     const pathFilter = options.path;
