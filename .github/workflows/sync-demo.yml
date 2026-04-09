@@ -8,6 +8,7 @@ on:
       - 'client/src/lib/dag.ts'
       - 'client/src/lib/network-dag.ts'
       - 'client/src/hooks/useSettings.ts'
+      - 'client/src/index.css'
   workflow_dispatch:
 
 permissions:
@@ -59,6 +60,11 @@ jobs:
           # Shared hooks
           if [ -f "main/client/src/hooks/useSettings.ts" ]; then
             cp "main/client/src/hooks/useSettings.ts" "demo/src/hooks/useSettings.ts"
+          fi
+
+          # Shared CSS (theme variables, Tailwind base)
+          if [ -f "main/client/src/index.css" ]; then
+            cp "main/client/src/index.css" "demo/src/index.css"
           fi
 
           # Fix imports: api.js → github-api.js (handles both ../lib/api.js and ./api.js)
