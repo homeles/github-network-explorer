@@ -1,28 +1,43 @@
 # GitHub Network Explorer
 
-A visual DAG (Directed Acyclic Graph) explorer for GitHub repository commit history. Inspect branches, merges, commit details, CI status, and associated pull requests through an interactive SVG graph.
+An interactive GitHub network graph visualizer that extends the native GitHub Network Graph. Explore branches, merges, commit history, CI status, pull requests, and code frequency analytics through a visual DAG.
 
-![Dashboard Graph Explorer](docs/images/dashboard-graph-explorer.png)
+![Network View](docs/images/network-view.png)
 
 ---
 
 ## Features
 
+- **Network graph** — multi-branch commit visualization with color-coded lanes, merge diamonds, and branch labels with status badges
 - **Interactive commit DAG** — SVG-based visualization with zoom/pan, lane-based branch layout, and Bezier curve edges
-- **Merge commit detection** — merge commits rendered as diamonds, regular commits as circles
 - **Commit detail panel** — SHA, author, date, file changes, additions/deletions, associated PRs, CI status
-- **Branch & tag browsing** — switch branches from a dropdown; all branches loaded on first access
+- **Code frequency analytics** — time series charts, directory treemap, top files by changes, and contributor breakdown
+- **Branch & tag browsing** — switch branches from a dropdown; paginated loading for repos with many branches
+- **Organization & repo selector** — browse personal and org repositories from the top navigation
+- **Pull requests feed** — view open, closed, and merged PRs with status indicators
 - **GitHub OAuth** — secure OAuth 2.0 flow with session-based token storage
 - **Caching** — 5-minute in-memory cache (node-cache) on all API responses
-- **Pagination** — infinite scroll / load-more for large commit histories (50 commits per page)
+- **Pagination** — infinite scroll / load-more for large commit histories
+- **Dark theme** — GitGraph Obsidian design, built with shadcn/ui and Tailwind CSS
 
 ---
 
 ## Screenshots
 
-| Dashboard | Graph View | Branches | Pull Requests |
-|-----------|------------|----------|---------------|
-| ![Dashboard](docs/images/repo-network-dashboard.png) | ![Graph](docs/images/dashboard-graph-explorer.png) | ![Branches](docs/images/branches-management.png) | ![PRs](docs/images/pull-requests-feed.png) |
+### Network View
+All branches visualized as a color-coded commit graph with merge points and branch status badges.
+
+![Network View](docs/images/network-view.png)
+
+### Commit History
+Single-branch DAG with commit messages, SHAs, and timestamps. Click any commit for full details.
+
+![Commit History](docs/images/commit-history.png)
+
+### Code Frequency
+Analyze repository activity with time series, directory treemap, top files, and contributor views.
+
+![Code Frequency](docs/images/code-frequency.png)
 
 ---
 
@@ -32,17 +47,19 @@ A visual DAG (Directed Acyclic Graph) explorer for GitHub repository commit hist
 github-network-explorer/
 ├── client/          # React 19 + Vite + TypeScript + Tailwind CSS
 │   └── src/
-│       ├── components/   GraphVisualization, CommitDetail
+│       ├── components/   GraphVisualization, NetworkGraphVisualization,
+│       │                 DirectoryTreemap, CodeFrequencyChart, ...
 │       ├── hooks/        useAuth, useRepos, useCommits
-│       ├── lib/          api.ts, dag.ts
-│       └── pages/        LoginPage, AppLayout, GraphPage
+│       ├── lib/          api.ts, dag.ts, network-dag.ts
+│       └── pages/        LoginPage, AppLayout, GraphPage,
+│                         NetworkPage, CodeFrequencyPage, ...
 ├── server/          # Express.js + TypeScript
 │   └── src/
 │       ├── routes/       auth.routes, repo.routes
 │       ├── services/     github.service, cache.service
 │       ├── middleware/   auth.middleware
 │       └── types/        index.ts
-├── docs/images/     Design screenshots
+├── docs/images/     Screenshots
 ├── Dockerfile       Multi-stage build
 ├── docker-compose.yml
 └── pnpm-workspace.yaml
@@ -60,7 +77,9 @@ github-network-explorer/
 | `GET` | `/api/repos/:owner/:repo/overview` | Branches, tags, stars, forks |
 | `GET` | `/api/repos/:owner/:repo/commits/:branch` | Paginated commit history |
 | `GET` | `/api/repos/:owner/:repo/commit/:sha` | Full commit detail |
+| `GET` | `/api/repos/:owner/:repo/branches` | List all branches |
 | `GET` | `/api/repos/:owner/:repo/pulls` | Pull requests |
+| `GET` | `/api/repos/:owner/:repo/code-frequency` | Code frequency analytics |
 
 ---
 
@@ -178,9 +197,9 @@ All GraphQL fields are verified against the [GitHub GraphQL Reference](https://d
 |-------|-----------|
 | Frontend framework | React 19 |
 | Build tool | Vite 6 |
-| Styling | Tailwind CSS 4 |
+| Styling | Tailwind CSS 4 + shadcn/ui |
 | Data fetching | TanStack Query v5 |
-| Graph rendering | D3 v7 (custom lane-based layout) |
+| Graph rendering | D3 v7 + d3-dag (custom lane-based layout) |
 | Routing | React Router v7 |
 | Backend | Express 4 + TypeScript |
 | GitHub API | `@octokit/graphql` + `@octokit/rest` |
