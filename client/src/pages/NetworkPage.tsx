@@ -49,12 +49,15 @@ export default function NetworkPage() {
     branchMap: mainBranchMap,
     isLoading: commitsLoading,
     error,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
   } = useMultiBranchCommits(
     owner!,
     repo!,
     fetchBranches,
     !!owner && !!repo && fetchBranches.length > 0,
-    true // autoFetchAll pages of default branch
+    false // don't auto-fetch all pages — user clicks Load More
   );
 
   // Phase 2: Load other live branches ON DEMAND (not automatic)
@@ -362,6 +365,31 @@ export default function NetworkPage() {
               defaultBranch={defaultBranch}
               selectedBranches={effectiveBranches}
             />
+          )}
+
+          {/* Load more commits */}
+          {!commitsLoading && !isFetchingNextPage && hasNextPage && commits.length > 0 && (
+            <div style={{ position: 'absolute', bottom: hasMoreBranches ? 56 : 16, left: '50%', transform: 'translateX(-50%)' }}>
+              <button
+                onClick={() => fetchNextPage()}
+                style={{
+                  background: 'rgba(88,166,255,0.1)',
+                  border: '1px solid rgba(88,166,255,0.3)',
+                  color: '#58a6ff',
+                  borderRadius: 8,
+                  padding: '0.4rem 1rem',
+                  fontSize: '0.8125rem',
+                  cursor: 'pointer',
+                }}
+              >
+                Load more commits ({commits.length} loaded)
+              </button>
+            </div>
+          )}
+          {isFetchingNextPage && (
+            <div style={{ position: 'absolute', bottom: hasMoreBranches ? 56 : 16, left: '50%', transform: 'translateX(-50%)', color: '#58a6ff', fontSize: '0.8125rem' }}>
+              Loading more commits…
+            </div>
           )}
 
           {/* Empty */}
