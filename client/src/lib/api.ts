@@ -174,6 +174,20 @@ export interface CodeFrequencyData {
   period: { since: string; until: string };
 }
 
+export interface CodeFrequencyStreamEvent {
+  phase: 'listing' | 'analyzing' | 'complete' | 'error';
+  /** Commits listed (listing phase) or analyzed (analyzing phase) so far */
+  loaded?: number;
+  /** Total commits to analyze; only available during analyzing phase */
+  total?: number | null;
+  /** Partial aggregated data sent every ~500 commits during analyzing phase */
+  partialData?: CodeFrequencyData;
+  /** Full data sent with the 'complete' event */
+  data?: CodeFrequencyData;
+  /** Error message sent with the 'error' event */
+  error?: string;
+}
+
 export interface AuthStatus {
   authenticated: boolean;
   user?: {
@@ -242,6 +256,19 @@ export const api = {
       return apiFetch<CodeFrequencyData>(
         `/api/repos/${owner}/${repo}/code-frequency${qs ? `?${qs}` : ''}`
       );
+    },
+    /** Open an SSE stream for incremental code-frequency loading. */
+    codeFrequencyStream: (
+      owner: string,
+      repo: string,
+      options?: { since?: string; until?: string; path?: string; maxCommits?: number }
+    ): EventSource => {
+      const params = new URLSearchParams({ stream: '1' });
+      if (options?.since) params.set('since', options.since);
+      if (options?.until) params.set('until', options.until);
+      if (options?.path) params.set('path', options.path);
+      if (options?.maxCommits !== undefined) params.set('maxCommits', String(options.maxCommits));
+      return new EventSource(`/api/repos/${owner}/${repo}/code-frequency?${params}`);
     },
   },
 };
