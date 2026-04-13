@@ -413,7 +413,8 @@ export class GitHubService {
       message: string; additions: number; deletions: number;
       files: Array<{ filename: string; additions: number; deletions: number; changes: number; status: string }>;
     }>,
-    period: { since?: string; until?: string }
+    period: { since?: string; until?: string },
+    allCommits?: Array<{ sha: string; date: string; author: { login: string | null; avatarUrl: string; name: string | null }; message: string }>
   ): CodeFrequencyData {
     function getWeekStart(dateStr: string): string {
       const d = new Date(dateStr);
@@ -423,6 +424,15 @@ export class GitHubService {
       return d.toISOString().slice(0, 10);
     }
 
+    // Build commit counts from ALL listed commits (not just successfully analyzed ones)
+    const weekCommitCounts = new Map<string, number>();
+    const commitsSource = allCommits ?? commitDetails;
+    for (const c of commitsSource) {
+      const week = getWeekStart(c.date);
+      weekCommitCounts.set(week, (weekCommitCounts.get(week) ?? 0) + 1);
+    }
+
+    // Build stats from analyzed commits (may be incomplete due to API failures)
     const weekMap = new Map<string, { additions: number; deletions: number; commitCount: number }>();
     for (const c of commitDetails) {
       const week = getWeekStart(c.date);
@@ -432,7 +442,19 @@ export class GitHubService {
       entry.commitCount++;
       weekMap.set(week, entry);
     }
-    const timeSeries = Array.from(weekMap.entries())
+
+    // Merge: use listing commit counts, analyzed stats
+    const allWeeks = new Set([...weekCommitCounts.keys(), ...weekMap.keys()]);
+    const mergedWeekMap = new Map<string, { additions: number; deletions: number; commitCount: number }>();
+    for (const week of allWeeks) {
+      const stats = weekMap.get(week) ?? { additions: 0, deletions: 0, commitCount: 0 };
+      mergedWeekMap.set(week, {
+        additions: stats.additions,
+        deletions: stats.deletions,
+        commitCount: weekCommitCounts.get(week) ?? stats.commitCount,
+      });
+    }
+    const timeSeries = Array.from(mergedWeekMap.entries())
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([weekStart, v]) => ({ weekStart, ...v }));
 
@@ -499,11 +521,11 @@ export class GitHubService {
     const contributors = Array.from(contribMap.values())
       .sort((a, b) => (b.additions + b.deletions) - (a.additions + a.deletions));
 
-    const dates = commitDetails.map((c) => c.date).filter(Boolean).sort();
+    const allDates = (allCommits ?? commitDetails).map((c) => c.date).filter(Boolean).sort();
     return {
       timeSeries, directoryBreakdown, topFiles, contributors,
-      totalCommitsAnalyzed: commitDetails.length,
-      period: { since: period.since ?? dates[0] ?? '', until: period.until ?? dates[dates.length - 1] ?? '' },
+      totalCommitsAnalyzed: (allCommits ?? commitDetails).length,
+      period: { since: period.since ?? allDates[0] ?? '', until: period.until ?? allDates[allDates.length - 1] ?? '' },
     };
   }
 
@@ -604,14 +626,14 @@ export class GitHubService {
           phase: 'analyzing',
           loaded: commitDetails.length,
           total: allCommitShas.length,
-          partialData: includePartial ? this.buildCodeFrequencyData(commitDetails, options) : undefined,
+          partialData: includePartial ? this.buildCodeFrequencyData(commitDetails, options, allCommitShas) : undefined,
         });
         lastReportAt = commitDetails.length;
         if (includePartial) lastPartialAt = commitDetails.length;
       }
     }
 
-    return this.buildCodeFrequencyData(commitDetails, options);
+    return this.buildCodeFrequencyData(commitDetails, options, allCommitShas);
   }
 
   async getUserRepos(): Promise<UserRepo[]> {
