@@ -40,7 +40,7 @@ interface StreamState {
 }
 
 const DEFAULT_MAX_COMMITS: Record<TimeRange, number> = {
-  '1m': 500, '3m': 500, '6m': 500, '1y': 500, all: 5000,
+  '1m': 5000, '3m': 5000, '6m': 5000, '1y': 5000, all: 5000,
 };
 
 export default function CodeFrequencyPage() {
@@ -125,7 +125,7 @@ export default function CodeFrequencyPage() {
   }, []);
 
   const loadMore = useCallback(() => {
-    maxCommitsRef.current += 500;
+    maxCommitsRef.current += 5000;
     setLoadKey((k) => k + 1);
   }, []);
 
