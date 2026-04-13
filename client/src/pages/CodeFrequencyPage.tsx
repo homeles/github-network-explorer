@@ -39,10 +39,6 @@ interface StreamState {
   error: string | null;
 }
 
-const DEFAULT_MAX_COMMITS: Record<TimeRange, number> = {
-  '1m': 300, '3m': 300, '6m': 300, '1y': 300, all: 300,
-};
-
 export default function CodeFrequencyPage() {
   const { owner, repo } = useParams<{ owner: string; repo: string }>();
   const [tab, setTab] = useState<Tab>('timeseries');
@@ -56,12 +52,6 @@ export default function CodeFrequencyPage() {
     phase: 'idle', loaded: 0, total: null, data: null, error: null,
   });
   const esRef = useRef<EventSource | null>(null);
-  const maxCommitsRef = useRef<number>(DEFAULT_MAX_COMMITS[timeRange]);
-
-  // Reset maxCommits when time range or path changes
-  useEffect(() => {
-    maxCommitsRef.current = DEFAULT_MAX_COMMITS[timeRange];
-  }, [timeRange, pathFilter]);
 
   // Start/restart the SSE stream whenever query params or loadKey change
   useEffect(() => {
@@ -73,7 +63,6 @@ export default function CodeFrequencyPage() {
     const es = api.repos.codeFrequencyStream(owner, repo, {
       since, until,
       path: pathFilter || undefined,
-      maxCommits: maxCommitsRef.current,
     });
     esRef.current = es;
 
@@ -125,9 +114,8 @@ export default function CodeFrequencyPage() {
   }, []);
 
   const retry = useCallback(() => {
-    maxCommitsRef.current = DEFAULT_MAX_COMMITS[timeRange];
     setLoadKey((k) => k + 1);
-  }, [timeRange]);
+  }, []);
 
   const { data, phase, loaded, total, error } = {
     data: streamState.data,

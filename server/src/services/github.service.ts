@@ -527,7 +527,7 @@ export class GitHubService {
     }) => void,
     signal?: AbortSignal
   ): Promise<CodeFrequencyData> {
-    const maxCommits = options.maxCommits ?? 500;
+    const maxCommits = options.maxCommits ?? Infinity;
     const since = options.since;
     const until = options.until;
     const pathFilter = options.path;
@@ -537,9 +537,9 @@ export class GitHubService {
     const allCommitShas: CommitBasic[] = [];
 
     let page = 1;
-    while (allCommitShas.length < maxCommits) {
+    while (maxCommits === Infinity || allCommitShas.length < maxCommits) {
       if (signal?.aborted) break;
-      const perPage = Math.min(100, maxCommits - allCommitShas.length);
+      const perPage = maxCommits === Infinity ? 100 : Math.min(100, maxCommits - allCommitShas.length);
       const params: { owner: string; repo: string; per_page: number; page: number; since?: string; until?: string; path?: string } =
         { owner, repo, per_page: perPage, page };
       if (since) params.since = since;
