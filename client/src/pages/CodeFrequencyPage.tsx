@@ -46,7 +46,7 @@ const DEFAULT_MAX_COMMITS: Record<TimeRange, number> = {
 export default function CodeFrequencyPage() {
   const { owner, repo } = useParams<{ owner: string; repo: string }>();
   const [tab, setTab] = useState<Tab>('timeseries');
-  const [timeRange, setTimeRange] = useState<TimeRange>('3m');
+  const [timeRange, setTimeRange] = useState<TimeRange>('1m');
   const [pathFilter, setPathFilter] = useState('');
   const [loadKey, setLoadKey] = useState(0);
 
@@ -122,11 +122,6 @@ export default function CodeFrequencyPage() {
   const stopLoading = useCallback(() => {
     esRef.current?.close();
     setStreamState((prev) => ({ ...prev, phase: 'stopped' }));
-  }, []);
-
-  const loadMore = useCallback(() => {
-    maxCommitsRef.current += 300;
-    setLoadKey((k) => k + 1);
   }, []);
 
   const retry = useCallback(() => {
@@ -327,17 +322,6 @@ export default function CodeFrequencyPage() {
               }}
             >
               Stop
-            </button>
-          )}
-          {(phase === 'complete' || phase === 'stopped') && (
-            <button
-              onClick={loadMore}
-              style={{
-                background: '#161b22', border: '1px solid #30363d', borderRadius: 6,
-                color: '#58a6ff', padding: '0.25rem 0.625rem', fontSize: '0.8125rem', cursor: 'pointer',
-              }}
-            >
-              Load More
             </button>
           )}
 
