@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { useParams } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../lib/api.js';
@@ -61,6 +61,333 @@ function StateBadge({ state }: { state: string }) {
     >
       {label}
     </span>
+  );
+}
+
+type CheckNode =
+  | { name: string; conclusion: string | null; status: string; detailsUrl: string | null }
+  | { context: string; state: string; targetUrl: string | null };
+
+function CIStatusIcon({ rollup }: { pr: PullRequest; rollup: PullRequest['statusCheckRollup'] }) {
+  const [showTooltip, setShowTooltip] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  if (!rollup) {
+    return (
+      <span title="No CI status" style={{ fontSize: '0.875rem', cursor: 'default' }}>
+        ⚪
+      </span>
+    );
+  }
+
+  const icon =
+    rollup.state === 'SUCCESS'
+      ? '✅'
+      : rollup.state === 'FAILURE' || rollup.state === 'ERROR'
+        ? '❌'
+        : rollup.state === 'PENDING'
+          ? '⏳'
+          : '⚪';
+
+  const checks = rollup.contexts.nodes;
+
+  function getCheckName(c: CheckNode): string {
+    return 'name' in c ? c.name : c.context;
+  }
+  function getCheckState(c: CheckNode): string {
+    if ('conclusion' in c) return c.conclusion ?? c.status;
+    return c.state;
+  }
+  function getCheckUrl(c: CheckNode): string | null {
+    return 'detailsUrl' in c ? c.detailsUrl : c.targetUrl;
+  }
+
+  return (
+    <div
+      ref={containerRef}
+      style={{ position: 'relative', display: 'inline-flex' }}
+      onMouseEnter={() => setShowTooltip(true)}
+      onMouseLeave={() => setShowTooltip(false)}
+    >
+      <span style={{ fontSize: '0.875rem', cursor: 'default' }}>{icon}</span>
+      {showTooltip && checks.length > 0 && (
+        <div
+          style={{
+            position: 'absolute',
+            bottom: 'calc(100% + 6px)',
+            right: 0,
+            background: '#1c2128',
+            border: '1px solid #30363d',
+            borderRadius: 8,
+            padding: '8px 10px',
+            minWidth: 220,
+            maxWidth: 340,
+            zIndex: 200,
+            boxShadow: '0 4px 16px rgba(0,0,0,0.4)',
+            fontSize: '11px',
+          }}
+        >
+          {checks.map((c, i) => {
+            const name = getCheckName(c);
+            const st = getCheckState(c);
+            const url = getCheckUrl(c);
+            const stColor =
+              st === 'SUCCESS' || st === 'success'
+                ? '#3fb950'
+                : st === 'FAILURE' || st === 'failure' || st === 'ERROR' || st === 'error'
+                  ? '#f85149'
+                  : '#d29922';
+            return (
+              <div
+                key={i}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '3px 0',
+                  borderBottom: i < checks.length - 1 ? '1px solid #21262d' : 'none',
+                }}
+              >
+                <span style={{ color: stColor, flexShrink: 0 }}>●</span>
+                {url ? (
+                  <a
+                    href={url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{ color: '#58a6ff', textDecoration: 'none', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                  >
+                    {name}
+                  </a>
+                ) : (
+                  <span style={{ color: '#dfe2eb', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</span>
+                )}
+                <span style={{ color: '#8b949e', flexShrink: 0 }}>{st}</span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ReviewerAvatars({ pr }: { pr: PullRequest }) {
+  // Build a merged list: requested reviewers + people who reviewed
+  const reviewed = new Map<string, { login: string; avatarUrl: string; state: string }>();
+
+  for (const r of pr.reviewList) {
+    if (r.author) {
+      const existing = reviewed.get(r.author.login);
+      // Prefer APPROVED / CHANGES_REQUESTED over COMMENTED
+      if (!existing || existing.state === 'COMMENTED') {
+        reviewed.set(r.author.login, { ...r.author, state: r.state });
+      }
+    }
+  }
+
+  const allReviewers: Array<{ login: string; avatarUrl: string; state: string }> = [];
+  for (const req of pr.reviewRequests) {
+    if (!reviewed.has(req.login)) {
+      allReviewers.push({ ...req, state: 'PENDING' });
+    }
+  }
+  for (const [, r] of reviewed) {
+    allReviewers.push(r);
+  }
+
+  if (allReviewers.length === 0) return null;
+
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 2, flexShrink: 0 }}>
+      {allReviewers.slice(0, 5).map((r) => {
+        const ringColor =
+          r.state === 'APPROVED'
+            ? '#3fb950'
+            : r.state === 'CHANGES_REQUESTED'
+              ? '#f85149'
+              : r.state === 'COMMENTED'
+                ? '#d29922'
+                : '#484f58';
+        return (
+          <img
+            key={r.login}
+            src={r.avatarUrl}
+            alt={r.login}
+            title={`${r.login}: ${r.state}`}
+            style={{
+              width: 22,
+              height: 22,
+              borderRadius: '50%',
+              border: `2px solid ${ringColor}`,
+              flexShrink: 0,
+            }}
+          />
+        );
+      })}
+    </div>
+  );
+}
+
+const SORT_LABELS: Record<SortMode, string> = {
+  newest: 'Newest',
+  oldest: 'Oldest',
+  'most-comments': 'Most reviews',
+  'most-reviews': 'Most commits',
+};
+
+function SortDropdown({ sortMode, setSortMode }: { sortMode: SortMode; setSortMode: (m: SortMode) => void }) {
+  const [open, setOpen] = useState(false);
+  const modes: SortMode[] = ['newest', 'oldest', 'most-comments', 'most-reviews'];
+  return (
+    <div style={{ position: 'relative' }}>
+      <button
+        onClick={() => setOpen((o) => !o)}
+        style={{
+          background: '#161b22',
+          border: '1px solid #30363d',
+          borderRadius: 6,
+          color: '#dfe2eb',
+          padding: '0.25rem 0.625rem',
+          fontSize: '0.8125rem',
+          cursor: 'pointer',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '0.25rem',
+        }}
+      >
+        Sort: {SORT_LABELS[sortMode]}
+        <span style={{ color: '#8b949e', fontSize: '0.6875rem' }}>▼</span>
+      </button>
+      {open && (
+        <div
+          style={{
+            position: 'absolute',
+            top: 'calc(100% + 4px)',
+            right: 0,
+            background: '#161b22',
+            border: '1px solid #30363d',
+            borderRadius: 6,
+            zIndex: 100,
+            minWidth: 140,
+            boxShadow: '0 4px 12px rgba(0,0,0,0.4)',
+          }}
+        >
+          {modes.map((m) => (
+            <button
+              key={m}
+              onClick={() => { setSortMode(m); setOpen(false); }}
+              style={{
+                display: 'block',
+                width: '100%',
+                textAlign: 'left',
+                background: sortMode === m ? 'rgba(88,166,255,0.12)' : 'transparent',
+                border: 'none',
+                color: sortMode === m ? '#58a6ff' : '#dfe2eb',
+                padding: '0.4rem 0.75rem',
+                fontSize: '0.8125rem',
+                cursor: 'pointer',
+              }}
+            >
+              {SORT_LABELS[m]}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function FilterDropdown({
+  label,
+  options,
+  value,
+  onChange,
+}: {
+  label: string;
+  options: string[];
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  if (options.length === 0) return null;
+  return (
+    <div style={{ position: 'relative' }}>
+      <button
+        onClick={() => setOpen((o) => !o)}
+        style={{
+          background: value ? 'rgba(88,166,255,0.12)' : '#161b22',
+          border: `1px solid ${value ? '#58a6ff' : '#30363d'}`,
+          borderRadius: 6,
+          color: value ? '#58a6ff' : '#dfe2eb',
+          padding: '0.25rem 0.625rem',
+          fontSize: '0.8125rem',
+          cursor: 'pointer',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '0.25rem',
+          whiteSpace: 'nowrap',
+        }}
+      >
+        {label}{value ? `: ${value}` : ''}
+        <span style={{ color: '#8b949e', fontSize: '0.6875rem' }}>▼</span>
+      </button>
+      {open && (
+        <div
+          style={{
+            position: 'absolute',
+            top: 'calc(100% + 4px)',
+            right: 0,
+            background: '#161b22',
+            border: '1px solid #30363d',
+            borderRadius: 6,
+            zIndex: 100,
+            minWidth: 160,
+            maxHeight: 240,
+            overflowY: 'auto',
+            boxShadow: '0 4px 12px rgba(0,0,0,0.4)',
+          }}
+        >
+          <button
+            onClick={() => { onChange(''); setOpen(false); }}
+            style={{
+              display: 'block',
+              width: '100%',
+              textAlign: 'left',
+              background: !value ? 'rgba(88,166,255,0.12)' : 'transparent',
+              border: 'none',
+              color: !value ? '#58a6ff' : '#8b949e',
+              padding: '0.4rem 0.75rem',
+              fontSize: '0.8125rem',
+              cursor: 'pointer',
+            }}
+          >
+            All
+          </button>
+          {options.map((opt) => (
+            <button
+              key={opt}
+              onClick={() => { onChange(opt); setOpen(false); }}
+              style={{
+                display: 'block',
+                width: '100%',
+                textAlign: 'left',
+                background: value === opt ? 'rgba(88,166,255,0.12)' : 'transparent',
+                border: 'none',
+                color: value === opt ? '#58a6ff' : '#dfe2eb',
+                padding: '0.4rem 0.75rem',
+                fontSize: '0.8125rem',
+                cursor: 'pointer',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {opt}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -205,6 +532,12 @@ function PRRow({ pr }: { pr: PullRequest }) {
           )}
         </div>
       </div>
+
+      {/* Reviewer avatars */}
+      <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: 2 }}>
+        <ReviewerAvatars pr={pr} />
+        <CIStatusIcon pr={pr} rollup={pr.statusCheckRollup} />
+      </div>
     </a>
   );
 }
@@ -213,6 +546,8 @@ export default function PullRequestsPage() {
   const { owner, repo } = useParams<{ owner: string; repo: string }>();
   const [activeState, setActiveState] = useState<PRState>('OPEN');
   const [sortMode, setSortMode] = useState<SortMode>('newest');
+  const [authorFilter, setAuthorFilter] = useState('');
+  const [reviewerFilter, setReviewerFilter] = useState('');
 
   const { since, until } = useDateRange();
 
@@ -244,6 +579,20 @@ export default function PullRequestsPage() {
     { label: 'Merged', value: 'MERGED' },
   ];
 
+  // Compute unique authors and reviewers for filter dropdowns
+  const uniqueAuthors = prs
+    ? [...new Set(prs.map((p) => p.author?.login).filter((l): l is string => !!l))].sort()
+    : [];
+
+  const uniqueReviewers = prs
+    ? [
+        ...new Set([
+          ...prs.flatMap((p) => p.reviewRequests.map((r) => r.login)),
+          ...prs.flatMap((p) => p.reviewList.map((r) => r.author?.login ?? '')).filter(Boolean),
+        ]),
+      ].sort()
+    : [];
+
   const sortedPrs = prs
     ? [...prs].sort((a, b) => {
         switch (sortMode) {
@@ -264,10 +613,17 @@ export default function PullRequestsPage() {
     const created = new Date(pr.createdAt).getTime();
     if (since && created < new Date(since).getTime()) return false;
     if (until && created > new Date(until).getTime()) return false;
+    if (authorFilter && pr.author?.login !== authorFilter) return false;
+    if (reviewerFilter) {
+      const hasReviewer =
+        pr.reviewRequests.some((r) => r.login === reviewerFilter) ||
+        pr.reviewList.some((r) => r.author?.login === reviewerFilter);
+      if (!hasReviewer) return false;
+    }
     return true;
   });
 
-  const isDateFiltered = !!since || !!until;
+  const isFiltered = !!(since || until || authorFilter || reviewerFilter);
   const totalCount = sortedPrs.length;
   const filteredCount = filteredPrs.length;
 
@@ -308,31 +664,24 @@ export default function PullRequestsPage() {
         {/* Date range picker */}
         <DateRangePicker />
 
-        {/* Sort controls */}
-        <span style={{ color: '#8b949e', fontSize: '0.8125rem' }}>Sort:</span>
-        {(['newest', 'oldest', 'most-comments', 'most-reviews'] as SortMode[]).map((mode) => (
-          <button
-            key={mode}
-            onClick={() => setSortMode(mode)}
-            style={{
-              background: sortMode === mode ? 'rgba(88,166,255,0.15)' : 'transparent',
-              border: `1px solid ${sortMode === mode ? '#58a6ff' : '#30363d'}`,
-              borderRadius: 6,
-              color: sortMode === mode ? '#58a6ff' : '#8b949e',
-              padding: '0.25rem 0.625rem',
-              fontSize: '0.8125rem',
-              cursor: 'pointer',
-            }}
-          >
-            {mode === 'newest'
-              ? 'Newest'
-              : mode === 'oldest'
-                ? 'Oldest'
-                : mode === 'most-comments'
-                  ? 'Most reviews'
-                  : 'Most commits'}
-          </button>
-        ))}
+        {/* Author filter */}
+        <FilterDropdown
+          label="Author"
+          options={uniqueAuthors}
+          value={authorFilter}
+          onChange={setAuthorFilter}
+        />
+
+        {/* Reviewer filter */}
+        <FilterDropdown
+          label="Reviewer"
+          options={uniqueReviewers}
+          value={reviewerFilter}
+          onChange={setReviewerFilter}
+        />
+
+        {/* Sort dropdown */}
+        <SortDropdown sortMode={sortMode} setSortMode={setSortMode} />
       </div>
 
       {/* Tabs */}
@@ -367,8 +716,8 @@ export default function PullRequestsPage() {
           </button>
         ))}
 
-        {/* Date filter count badge */}
-        {isDateFiltered && !isLoading && prs && (
+        {/* Filter count badge */}
+        {isFiltered && !isLoading && prs && (
           <span
             style={{
               marginLeft: 'auto',
@@ -453,7 +802,7 @@ export default function PullRequestsPage() {
           >
             <span style={{ fontSize: '2rem' }}>📋</span>
             <span style={{ fontSize: '0.9375rem' }}>
-              No pull requests in the selected date range
+              No pull requests match the current filters
             </span>
           </div>
         ) : (

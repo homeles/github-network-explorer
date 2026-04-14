@@ -190,6 +190,31 @@ router.get(
   }
 );
 
+// GET /api/repos/:owner/:repo/tags
+router.get(
+  '/:owner/:repo/tags',
+  async (req: Request, res: Response): Promise<void> => {
+    const owner = str(req.params['owner']);
+    const repo = str(req.params['repo']);
+    const cacheKey = cacheService.cacheKey(['tags', owner, repo]);
+    const cached = cacheService.get(cacheKey);
+    if (cached) {
+      res.json(cached);
+      return;
+    }
+
+    try {
+      const service = getGitHubService(req);
+      const tags = await service.getTags(owner, repo);
+      cacheService.set(cacheKey, tags, 300);
+      res.json(tags);
+    } catch (err) {
+      console.error('Get tags error:', err);
+      res.status(500).json({ error: 'Failed to fetch tags' });
+    }
+  }
+);
+
 // GET /api/repos/:owner/:repo/pulls
 router.get(
   '/:owner/:repo/pulls',

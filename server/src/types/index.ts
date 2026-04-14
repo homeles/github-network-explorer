@@ -118,6 +118,33 @@ export interface PullRequestSummary {
   baseRefName: string;
   commits: { totalCount: number };
   reviews: { totalCount: number };
+  statusCheckRollup: {
+    state: string;
+    contexts: {
+      nodes: Array<
+        | { name: string; conclusion: string | null; status: string; detailsUrl: string | null }
+        | { context: string; state: string; targetUrl: string | null }
+      >;
+    };
+  } | null;
+  reviewRequests: Array<{ login: string; avatarUrl: string }>;
+  reviewList: Array<{ author: { login: string; avatarUrl: string } | null; state: string }>;
+}
+
+export interface TagInfo {
+  name: string;
+  message: string | null;
+  taggerName: string | null;
+  taggerDate: string | null;
+  commitOid: string;
+  commitAbbreviatedOid: string;
+  committedDate: string;
+  commitMessage: string;
+  author: {
+    name: string | null;
+    avatarUrl: string;
+    login: string | null;
+  };
 }
 
 export interface GitHubUser {

@@ -194,6 +194,51 @@ export default function NetworkGraphVisualization({
       }
     }
 
+    // Draw date axis at the bottom of the graph
+    {
+      const commitDates = layout.nodes.map((n) => new Date(n.committedDate).getTime()).filter(Boolean);
+      if (commitDates.length >= 2) {
+        const minTs = Math.min(...commitDates);
+        const maxTs = Math.max(...commitDates);
+        const minX = Math.min(...layout.nodes.map((n) => n.x));
+        const maxX = Math.max(...layout.nodes.map((n) => n.x));
+
+        if (minTs < maxTs && minX < maxX) {
+          const xScale = d3.scaleTime()
+            .domain([new Date(minTs), new Date(maxTs)])
+            .range([minX, maxX]);
+
+          const spanDays = (maxTs - minTs) / 86400000;
+          const tickFmt = spanDays > 365
+            ? d3.timeFormat('%b %Y')
+            : d3.timeFormat('%b %d');
+
+          const axisY = layout.totalHeight + 8;
+          const axisGroup = g.append('g')
+            .attr('class', 'date-axis')
+            .attr('transform', `translate(0,${axisY})`);
+
+          const tickCount = Math.min(10, Math.max(3, Math.floor(viewWidth / 80)));
+          const axis = d3.axisBottom(xScale)
+            .ticks(tickCount)
+            .tickFormat(tickFmt as (value: Date | d3.NumberValue) => string)
+            .tickSize(4);
+
+          axisGroup.call(axis);
+
+          axisGroup.selectAll<SVGTextElement, unknown>('text')
+            .style('fill', '#8b949e')
+            .style('font-size', '0.75rem');
+
+          axisGroup.selectAll<SVGLineElement, unknown>('line')
+            .style('stroke', '#30363d');
+
+          axisGroup.select<SVGPathElement>('.domain')
+            .style('stroke', '#30363d');
+        }
+      }
+    }
+
     // Draw nodes
     const nodeGroup = g.append('g').attr('class', 'nodes');
 
@@ -304,7 +349,8 @@ export default function NetworkGraphVisualization({
       zoom.transform(d3svg, zoomTransformRef.current);
     } else {
       const scaleX = viewWidth / (layout.totalWidth + 60);
-      const scaleY = viewHeight / (layout.totalHeight + 20);
+      // +50 to account for the date axis at the bottom
+      const scaleY = viewHeight / (layout.totalHeight + 50);
       const scale = Math.min(scaleX, scaleY, 2);
       const contentW = layout.totalWidth * scale;
       const contentH = layout.totalHeight * scale;

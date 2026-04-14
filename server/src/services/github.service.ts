@@ -5,6 +5,7 @@ import type {
   CommitsPage,
   CommitDetail,
   PullRequestSummary,
+  TagInfo,
   UserRepo,
   UserOrg,
   ReposPage,
@@ -286,11 +287,54 @@ export class GitHubService {
               }
               headRefName
               baseRefName
-              commits {
+              commits(last: 1) {
                 totalCount
+                nodes {
+                  commit {
+                    statusCheckRollup {
+                      state
+                      contexts(first: 25) {
+                        nodes {
+                          ... on CheckRun {
+                            name
+                            conclusion
+                            status
+                            detailsUrl
+                          }
+                          ... on StatusContext {
+                            context
+                            state
+                            targetUrl
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
               }
-              reviews {
+              reviews(first: 20) {
                 totalCount
+                nodes {
+                  author {
+                    login
+                    avatarUrl
+                  }
+                  state
+                }
+              }
+              reviewRequests(first: 10) {
+                nodes {
+                  requestedReviewer {
+                    ... on User {
+                      login
+                      avatarUrl
+                    }
+                    ... on Team {
+                      name
+                      avatarUrl
+                    }
+                  }
+                }
               }
             }
           }
@@ -298,13 +342,211 @@ export class GitHubService {
       }
     `;
 
+    interface RawPR {
+      number: number;
+      title: string;
+      state: string;
+      url: string;
+      createdAt: string;
+      updatedAt: string;
+      author: { login: string; avatarUrl: string } | null;
+      headRefName: string;
+      baseRefName: string;
+      commits: {
+        totalCount: number;
+        nodes: Array<{
+          commit: {
+            statusCheckRollup: {
+              state: string;
+              contexts: {
+                nodes: Array<
+                  | { name: string; conclusion: string | null; status: string; detailsUrl: string | null }
+                  | { context: string; state: string; targetUrl: string | null }
+                >;
+              };
+            } | null;
+          };
+        }>;
+      };
+      reviews: {
+        totalCount: number;
+        nodes: Array<{
+          author: { login: string; avatarUrl: string } | null;
+          state: string;
+        }>;
+      };
+      reviewRequests: {
+        nodes: Array<{
+          requestedReviewer:
+            | { login: string; avatarUrl: string }
+            | { name: string; avatarUrl: string }
+            | null;
+        }>;
+      };
+    }
+
     const result = await this.graphqlWithAuth<{
       repository: {
-        pullRequests: { nodes: PullRequestSummary[] };
+        pullRequests: { nodes: RawPR[] };
       };
     }>(query, { owner, repo, states });
 
-    return result.repository.pullRequests.nodes;
+    return result.repository.pullRequests.nodes.map((pr) => {
+      const lastCommitNode = pr.commits.nodes[0];
+      const rollup = lastCommitNode?.commit.statusCheckRollup ?? null;
+
+      const reviewRequests = pr.reviewRequests.nodes
+        .map((rr) => {
+          const rv = rr.requestedReviewer;
+          if (!rv) return null;
+          if ('login' in rv) return { login: rv.login, avatarUrl: rv.avatarUrl };
+          if ('name' in rv) return { login: rv.name, avatarUrl: rv.avatarUrl };
+          return null;
+        })
+        .filter((r): r is { login: string; avatarUrl: string } => r !== null);
+
+      return {
+        number: pr.number,
+        title: pr.title,
+        state: pr.state,
+        url: pr.url,
+        createdAt: pr.createdAt,
+        updatedAt: pr.updatedAt,
+        author: pr.author,
+        headRefName: pr.headRefName,
+        baseRefName: pr.baseRefName,
+        commits: { totalCount: pr.commits.totalCount },
+        reviews: { totalCount: pr.reviews.totalCount },
+        statusCheckRollup: rollup,
+        reviewRequests,
+        reviewList: pr.reviews.nodes.map((r) => ({
+          author: r.author,
+          state: r.state,
+        })),
+      };
+    });
+  }
+
+  async getTags(owner: string, repo: string): Promise<TagInfo[]> {
+    const query = `
+      query($owner: String!, $repo: String!, $cursor: String) {
+        repository(owner: $owner, name: $repo) {
+          refs(refPrefix: "refs/tags/", first: 50, orderBy: { field: TAG_COMMIT_DATE, direction: DESC }, after: $cursor) {
+            nodes {
+              name
+              target {
+                ... on Tag {
+                  message
+                  tagger { name date }
+                  target {
+                    ... on Commit {
+                      oid
+                      abbreviatedOid
+                      committedDate
+                      message
+                      author { name avatarUrl user { login } }
+                    }
+                  }
+                }
+                ... on Commit {
+                  oid
+                  abbreviatedOid
+                  committedDate
+                  message
+                  author { name avatarUrl user { login } }
+                }
+              }
+            }
+            pageInfo { hasNextPage endCursor }
+          }
+        }
+      }
+    `;
+
+    interface TagNode {
+      name: string;
+      target:
+        | {
+            message?: string;
+            tagger?: { name: string; date: string } | null;
+            target?: {
+              oid: string;
+              abbreviatedOid: string;
+              committedDate: string;
+              message: string;
+              author: { name: string | null; avatarUrl: string; user: { login: string } | null } | null;
+            } | null;
+            // lightweight tag falls through as Commit
+            oid?: string;
+            abbreviatedOid?: string;
+            committedDate?: string;
+            author?: { name: string | null; avatarUrl: string; user: { login: string } | null } | null;
+          }
+        | null;
+    }
+
+    const result = await this.graphqlWithAuth<{
+      repository: {
+        refs: {
+          nodes: TagNode[];
+          pageInfo: { hasNextPage: boolean; endCursor: string | null };
+        };
+      };
+    }>(query, { owner, repo, cursor: null });
+
+    return result.repository.refs.nodes.map((node) => {
+      const t = node.target;
+      if (!t) {
+        return {
+          name: node.name,
+          message: null,
+          taggerName: null,
+          taggerDate: null,
+          commitOid: '',
+          commitAbbreviatedOid: '',
+          committedDate: '',
+          commitMessage: '',
+          author: { name: null, avatarUrl: '', login: null },
+        };
+      }
+
+      // Annotated tag: has tagger + nested target commit
+      if ('tagger' in t && t.tagger !== undefined) {
+        const commit = t.target;
+        return {
+          name: node.name,
+          message: t.message ?? null,
+          taggerName: t.tagger?.name ?? null,
+          taggerDate: t.tagger?.date ?? null,
+          commitOid: commit?.oid ?? '',
+          commitAbbreviatedOid: commit?.abbreviatedOid ?? '',
+          committedDate: commit?.committedDate ?? '',
+          commitMessage: commit?.message ?? '',
+          author: {
+            name: commit?.author?.name ?? null,
+            avatarUrl: commit?.author?.avatarUrl ?? '',
+            login: commit?.author?.user?.login ?? null,
+          },
+        };
+      }
+
+      // Lightweight tag: target IS the commit
+      return {
+        name: node.name,
+        message: null,
+        taggerName: null,
+        taggerDate: null,
+        commitOid: t.oid ?? '',
+        commitAbbreviatedOid: t.abbreviatedOid ?? '',
+        committedDate: t.committedDate ?? '',
+        commitMessage: t.message ?? '',
+        author: {
+          name: t.author?.name ?? null,
+          avatarUrl: t.author?.avatarUrl ?? '',
+          login: t.author?.user?.login ?? null,
+        },
+      };
+    });
   }
 
   async getBranches(owner: string, repo: string): Promise<BranchInfo[]> {
