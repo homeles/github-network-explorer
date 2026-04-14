@@ -213,6 +213,8 @@ router.get(
 );
 
 // GET /api/repos/:owner/:repo/code-frequency
+// Supports ?stream=1 for Server-Sent Events (SSE) streaming with incremental progress.
+// Without ?stream=1, behaves as before (JSON response, cached).
 router.get(
   '/:owner/:repo/code-frequency',
   async (req: Request, res: Response): Promise<void> => {
@@ -222,22 +224,79 @@ router.get(
     const until = typeof req.query.until === 'string' ? req.query.until : undefined;
     const path = typeof req.query.path === 'string' ? req.query.path : undefined;
     const maxCommits = typeof req.query.maxCommits === 'string' ? parseInt(req.query.maxCommits, 10) : undefined;
+    const stream = req.query.stream === '1';
 
     const cacheKey = cacheService.cacheKey(['code-frequency', owner, repo, path ?? '', since ?? '', until ?? '', String(maxCommits ?? 100)]);
     const cached = cacheService.get(cacheKey);
-    if (cached) {
-      res.json(cached);
+
+    // ── Non-streaming path (backwards compatible) ──────────────────────────
+    if (!stream) {
+      if (cached) {
+        res.json(cached);
+        return;
+      }
+      try {
+        const service = getGitHubService(req);
+        const data = await service.getCodeFrequency(owner, repo, { since, until, path, maxCommits });
+        cacheService.set(cacheKey, data, 300);
+        res.json(data);
+      } catch (err) {
+        console.error('Get code frequency error:', err);
+        res.status(500).json({ error: 'Failed to fetch code frequency data' });
+      }
       return;
     }
 
+    // ── SSE streaming path ─────────────────────────────────────────────────
+    res.writeHead(200, {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      'Connection': 'keep-alive',
+      'X-Accel-Buffering': 'no',
+    });
+
+    function sendEvent(data: object) {
+      if (!res.writableEnded) {
+        res.write(`data: ${JSON.stringify(data)}\n\n`);
+      }
+    }
+
+    // Cache hit: send complete event immediately
+    if (cached) {
+      sendEvent({ phase: 'complete', data: cached });
+      res.end();
+      return;
+    }
+
+    const controller = new AbortController();
+    req.on('close', () => controller.abort());
+
     try {
       const service = getGitHubService(req);
-      const data = await service.getCodeFrequency(owner, repo, { since, until, path, maxCommits });
-      cacheService.set(cacheKey, data, 300);
-      res.json(data);
+      const finalData = await service.getCodeFrequencyWithProgress(
+        owner,
+        repo,
+        { since, until, path, maxCommits },
+        (progress) => {
+          sendEvent({
+            phase: progress.phase,
+            loaded: progress.loaded,
+            total: progress.total,
+            partialData: progress.partialData,
+          });
+        },
+        controller.signal
+      );
+
+      if (!controller.signal.aborted) {
+        cacheService.set(cacheKey, finalData, 300);
+      }
+      sendEvent({ phase: 'complete', data: finalData });
+      res.end();
     } catch (err) {
-      console.error('Get code frequency error:', err);
-      res.status(500).json({ error: 'Failed to fetch code frequency data' });
+      console.error('Get code frequency stream error:', err);
+      sendEvent({ phase: 'error', error: 'Failed to fetch code frequency data' });
+      res.end();
     }
   }
 );
