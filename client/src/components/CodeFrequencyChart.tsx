@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react';
 import * as d3 from 'd3';
 
 interface TimeSeriesPoint {
-  weekStart: string;
+  date: string;
   additions: number;
   deletions: number;
   commitCount: number;
@@ -34,7 +34,7 @@ export default function CodeFrequencyChart({ data }: Props) {
 
     const parsed = data.map((d) => ({
       ...d,
-      date: new Date(d.weekStart + 'T00:00:00Z'),
+      date: new Date(d.date + 'T00:00:00Z'),
     }));
 
     const maxVal = d3.max(parsed, (d) => Math.max(d.additions, d.deletions)) ?? 1;
@@ -106,12 +106,16 @@ export default function CodeFrequencyChart({ data }: Props) {
       .attr('d', deletionsArea);
 
     // X axis
+    const spanDays = parsed.length > 1
+      ? (parsed[parsed.length - 1].date.getTime() - parsed[0].date.getTime()) / 86400000
+      : 0;
+    const tickFmt = spanDays > 180 ? '%b %Y' : '%b %d';
     g.append('g')
       .attr('transform', `translate(0,${innerHeight})`)
       .call(
         d3.axisBottom(xScale)
-          .ticks(Math.min(parsed.length, 8))
-          .tickFormat((d) => d3.timeFormat('%b %Y')(d as Date))
+          .ticks(Math.min(parsed.length, 12))
+          .tickFormat((d) => d3.timeFormat(tickFmt)(d as Date))
       )
       .call((gg) => {
         gg.select('.domain').attr('stroke', '#30363d');

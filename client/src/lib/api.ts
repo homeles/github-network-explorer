@@ -149,7 +149,7 @@ export interface DirectoryStats {
 
 export interface CodeFrequencyData {
   timeSeries: Array<{
-    weekStart: string;
+    date: string;
     additions: number;
     deletions: number;
     commitCount: number;

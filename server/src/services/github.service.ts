@@ -418,47 +418,43 @@ export class GitHubService {
     period: { since?: string; until?: string },
     allCommits?: Array<{ sha: string; date: string; author: { login: string | null; avatarUrl: string; name: string | null }; message: string }>
   ): CodeFrequencyData {
-    function getWeekStart(dateStr: string): string {
-      const d = new Date(dateStr);
-      const day = d.getUTCDay();
-      const diff = day === 0 ? 0 : day;
-      d.setUTCDate(d.getUTCDate() - diff);
-      return d.toISOString().slice(0, 10);
+    function getDay(dateStr: string): string {
+      return dateStr.slice(0, 10);
     }
 
     // Build commit counts from ALL listed commits (not just successfully analyzed ones)
-    const weekCommitCounts = new Map<string, number>();
+    const dayCommitCounts = new Map<string, number>();
     const commitsSource = allCommits ?? commitDetails;
     for (const c of commitsSource) {
-      const week = getWeekStart(c.date);
-      weekCommitCounts.set(week, (weekCommitCounts.get(week) ?? 0) + 1);
+      const day = getDay(c.date);
+      dayCommitCounts.set(day, (dayCommitCounts.get(day) ?? 0) + 1);
     }
 
     // Build stats from analyzed commits (may be incomplete due to API failures)
-    const weekMap = new Map<string, { additions: number; deletions: number; commitCount: number }>();
+    const dayMap = new Map<string, { additions: number; deletions: number; commitCount: number }>();
     for (const c of commitDetails) {
-      const week = getWeekStart(c.date);
-      const entry = weekMap.get(week) ?? { additions: 0, deletions: 0, commitCount: 0 };
+      const day = getDay(c.date);
+      const entry = dayMap.get(day) ?? { additions: 0, deletions: 0, commitCount: 0 };
       entry.additions += c.additions;
       entry.deletions += c.deletions;
       entry.commitCount++;
-      weekMap.set(week, entry);
+      dayMap.set(day, entry);
     }
 
     // Merge: use listing commit counts, analyzed stats
-    const allWeeks = new Set([...weekCommitCounts.keys(), ...weekMap.keys()]);
-    const mergedWeekMap = new Map<string, { additions: number; deletions: number; commitCount: number }>();
-    for (const week of allWeeks) {
-      const stats = weekMap.get(week) ?? { additions: 0, deletions: 0, commitCount: 0 };
-      mergedWeekMap.set(week, {
+    const allDays = new Set([...dayCommitCounts.keys(), ...dayMap.keys()]);
+    const mergedDayMap = new Map<string, { additions: number; deletions: number; commitCount: number }>();
+    for (const day of allDays) {
+      const stats = dayMap.get(day) ?? { additions: 0, deletions: 0, commitCount: 0 };
+      mergedDayMap.set(day, {
         additions: stats.additions,
         deletions: stats.deletions,
-        commitCount: weekCommitCounts.get(week) ?? stats.commitCount,
+        commitCount: dayCommitCounts.get(day) ?? stats.commitCount,
       });
     }
-    const timeSeries = Array.from(mergedWeekMap.entries())
+    const timeSeries = Array.from(mergedDayMap.entries())
       .sort(([a], [b]) => a.localeCompare(b))
-      .map(([weekStart, v]) => ({ weekStart, ...v }));
+      .map(([date, v]) => ({ date, ...v }));
 
     interface DirNode {
       path: string; additions: number; deletions: number; changes: number;
