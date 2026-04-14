@@ -232,10 +232,16 @@ export const api = {
       apiFetch<ReposPage>(`/api/repos?page=${page}&per_page=${perPage}`),
     overview: (owner: string, repo: string) =>
       apiFetch<RepoOverview>(`/api/repos/${owner}/${repo}/overview`),
-    commits: (owner: string, repo: string, branch: string, cursor?: string) =>
-      apiFetch<CommitsPage>(
-        `/api/repos/${owner}/${repo}/commits/${encodeURIComponent(branch)}${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ''}`
-      ),
+    commits: (owner: string, repo: string, branch: string, cursor?: string, since?: string, until?: string) => {
+      const params = new URLSearchParams();
+      if (cursor) params.set('cursor', cursor);
+      if (since) params.set('since', since);
+      if (until) params.set('until', until);
+      const qs = params.toString();
+      return apiFetch<CommitsPage>(
+        `/api/repos/${owner}/${repo}/commits/${encodeURIComponent(branch)}${qs ? `?${qs}` : ''}`
+      );
+    },
     commitDetail: (owner: string, repo: string, sha: string) =>
       apiFetch<CommitDetail>(`/api/repos/${owner}/${repo}/commit/${sha}`),
     pullRequests: (owner: string, repo: string, state = 'OPEN') =>

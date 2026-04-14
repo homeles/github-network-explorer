@@ -125,15 +125,17 @@ export class GitHubService {
     owner: string,
     repo: string,
     branch: string,
-    cursor?: string
+    cursor?: string,
+    since?: string,
+    until?: string
   ): Promise<CommitsPage> {
     const query = `
-      query($owner: String!, $repo: String!, $branch: String!, $cursor: String) {
+      query($owner: String!, $repo: String!, $branch: String!, $cursor: String, $since: GitTimestamp, $until: GitTimestamp) {
         repository(owner: $owner, name: $repo) {
           ref(qualifiedName: $branch) {
             target {
               ... on Commit {
-                history(first: 50, after: $cursor) {
+                history(first: 50, after: $cursor, since: $since, until: $until) {
                   nodes {
                     oid
                     abbreviatedOid
@@ -187,7 +189,7 @@ export class GitHubService {
           };
         } | null;
       };
-    }>(query, { owner, repo, branch, cursor: cursor ?? null });
+    }>(query, { owner, repo, branch, cursor: cursor ?? null, since: since ?? null, until: until ?? null });
 
     const ref = result.repository.ref;
     if (!ref) {

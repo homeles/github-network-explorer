@@ -47,14 +47,16 @@ export function useMultiBranchCommits(
   repo: string,
   branches: string[],
   enabled = true,
-  autoFetchAll = false
+  autoFetchAll = false,
+  since?: string,
+  until?: string
 ) {
   // Sort branch names to produce a stable query key regardless of selection order
   const branchesKey = useMemo(() => branches.slice().sort().join('\x00'), [branches]);
 
   const { data, isLoading, error, fetchNextPage, hasNextPage, isFetchingNextPage } =
     useInfiniteQuery({
-      queryKey: ['multi-commits', owner, repo, branchesKey],
+      queryKey: ['multi-commits', owner, repo, branchesKey, since ?? '', until ?? ''],
       queryFn: async ({ pageParam }: { pageParam: Record<string, string | undefined> }) => {
         // Fetch branches in batches of 3 to avoid overwhelming the API
         const BATCH_SIZE = 3;
@@ -63,7 +65,7 @@ export function useMultiBranchCommits(
           const batch = branches.slice(i, i + BATCH_SIZE);
           const batchResults = await Promise.all(
             batch.map((branch) =>
-              api.repos.commits(owner, repo, branch, pageParam[branch])
+              api.repos.commits(owner, repo, branch, pageParam[branch], since, until)
             )
           );
           results.push(...batchResults);
