@@ -98,6 +98,8 @@ router.get(
     const branch = str(req.params['branch']);
     const cursor =
       typeof req.query.cursor === 'string' ? req.query.cursor : undefined;
+    const since = typeof req.query.since === 'string' ? req.query.since : undefined;
+    const until = typeof req.query.until === 'string' ? req.query.until : undefined;
 
     const cacheKey = cacheService.cacheKey([
       'commits',
@@ -105,6 +107,8 @@ router.get(
       repo,
       branch,
       cursor ?? 'start',
+      since ?? '',
+      until ?? '',
     ]);
     const cached = cacheService.get(cacheKey);
     if (cached) {
@@ -118,7 +122,9 @@ router.get(
         owner,
         repo,
         branch,
-        cursor
+        cursor,
+        since,
+        until
       );
       cacheService.set(cacheKey, commits);
       res.json(commits);

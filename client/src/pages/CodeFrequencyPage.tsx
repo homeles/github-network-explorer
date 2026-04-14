@@ -1,36 +1,14 @@
-import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { useParams } from 'react-router';
 import { api, type CodeFrequencyData, type CodeFrequencyStreamEvent } from '../lib/api.js';
 import CodeFrequencyChart from '../components/CodeFrequencyChart.js';
 import DirectoryTreemap from '../components/DirectoryTreemap.js';
 import TopFilesTable from '../components/TopFilesTable.js';
 import ContributorsChart from '../components/ContributorsChart.js';
+import { useDateRange } from '../contexts/DateRangeContext.js';
+import DateRangePicker from '../components/DateRangePicker.js';
 
 type Tab = 'timeseries' | 'treemap' | 'topfiles' | 'contributors';
-type TimeRange = '1m' | '3m' | '6m' | '1y' | 'all' | 'custom';
-
-function getDateRange(range: TimeRange): { since?: string; until?: string } {
-  if (range === 'all') return {};
-  const now = new Date();
-  // Truncate to date only (no time) so the key stays stable within the same day
-  const untilDate = now.toISOString().slice(0, 10) + 'T23:59:59Z';
-  const since = new Date(now);
-  if (range === '1m') since.setMonth(since.getMonth() - 1);
-  else if (range === '3m') since.setMonth(since.getMonth() - 3);
-  else if (range === '6m') since.setMonth(since.getMonth() - 6);
-  else if (range === '1y') since.setFullYear(since.getFullYear() - 1);
-  const sinceDate = since.toISOString().slice(0, 10) + 'T00:00:00Z';
-  return { since: sinceDate, until: untilDate };
-}
-
-const TIME_RANGE_LABELS: Record<TimeRange, string> = {
-  '1m': 'Last month',
-  '3m': 'Last 3 months',
-  '6m': 'Last 6 months',
-  '1y': 'Last year',
-  all: 'All time',
-  custom: 'Custom',
-};
 
 interface StreamState {
   phase: 'idle' | 'listing' | 'analyzing' | 'complete' | 'stopped' | 'error';
@@ -43,30 +21,10 @@ interface StreamState {
 export default function CodeFrequencyPage() {
   const { owner, repo } = useParams<{ owner: string; repo: string }>();
   const [tab, setTab] = useState<Tab>('timeseries');
-  const [timeRange, setTimeRange] = useState<TimeRange>('1m');
   const [pathFilter, setPathFilter] = useState('');
   const [loadKey, setLoadKey] = useState(0);
 
-  const [customSince, setCustomSince] = useState<string>(() => getDateRange('1m').since!.slice(0, 10));
-  const [customUntil, setCustomUntil] = useState<string>(() => getDateRange('1m').until!.slice(0, 10));
-
-  // Sync date inputs when switching to a preset
-  useEffect(() => {
-    if (timeRange === 'custom' || timeRange === 'all') return;
-    const { since, until } = getDateRange(timeRange);
-    setCustomSince(since!.slice(0, 10));
-    setCustomUntil(until!.slice(0, 10));
-  }, [timeRange]);
-
-  const { since, until } = useMemo(() => {
-    if (timeRange === 'custom') {
-      return {
-        since: customSince ? customSince + 'T00:00:00Z' : undefined,
-        until: customUntil ? customUntil + 'T23:59:59Z' : undefined,
-      };
-    }
-    return getDateRange(timeRange);
-  }, [timeRange, customSince, customUntil]);
+  const { since, until } = useDateRange();
 
   const [streamState, setStreamState] = useState<StreamState>({
     phase: 'idle', loaded: 0, total: null, data: null, error: null,
@@ -299,65 +257,8 @@ export default function CodeFrequencyPage() {
           {/* Spacer */}
           <div style={{ flexGrow: 1 }} />
 
-          {/* Time range controls */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
-            <select
-              value={timeRange}
-              onChange={(e) => setTimeRange(e.target.value as TimeRange)}
-              style={{
-                background: '#161b22',
-                border: '1px solid #30363d',
-                borderRadius: 6,
-                color: '#dfe2eb',
-                padding: '0.25rem 0.5rem',
-                fontSize: '0.8125rem',
-                cursor: 'pointer',
-              }}
-            >
-              {(Object.keys(TIME_RANGE_LABELS) as TimeRange[]).map((r) => (
-                <option key={r} value={r}>
-                  {TIME_RANGE_LABELS[r]}
-                </option>
-              ))}
-            </select>
-
-            <span style={{ color: '#30363d', fontSize: '0.75rem', padding: '0 0.125rem' }}>|</span>
-
-            <span style={{ color: '#8b949e', fontSize: '0.8125rem' }}>From</span>
-            <input
-              type="date"
-              value={customSince}
-              disabled={timeRange === 'all'}
-              onChange={(e) => { setCustomSince(e.target.value); setTimeRange('custom'); }}
-              style={{
-                background: '#161b22',
-                border: '1px solid #30363d',
-                borderRadius: 6,
-                color: timeRange === 'all' ? '#484f58' : '#dfe2eb',
-                padding: '0.25rem 0.375rem',
-                fontSize: '0.8125rem',
-                cursor: timeRange === 'all' ? 'default' : 'pointer',
-                colorScheme: 'dark',
-              }}
-            />
-            <span style={{ color: '#8b949e', fontSize: '0.8125rem' }}>To</span>
-            <input
-              type="date"
-              value={customUntil}
-              disabled={timeRange === 'all'}
-              onChange={(e) => { setCustomUntil(e.target.value); setTimeRange('custom'); }}
-              style={{
-                background: '#161b22',
-                border: '1px solid #30363d',
-                borderRadius: 6,
-                color: timeRange === 'all' ? '#484f58' : '#dfe2eb',
-                padding: '0.25rem 0.375rem',
-                fontSize: '0.8125rem',
-                cursor: timeRange === 'all' ? 'default' : 'pointer',
-                colorScheme: 'dark',
-              }}
-            />
-          </div>
+          {/* Date range picker */}
+          <DateRangePicker />
 
           {/* Stop / Load More controls */}
           {isLoading && (

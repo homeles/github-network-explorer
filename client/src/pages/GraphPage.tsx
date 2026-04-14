@@ -6,11 +6,15 @@ import { api } from '../lib/api.js';
 import GraphVisualization from '../components/GraphVisualization.js';
 import CommitDetail from '../components/CommitDetail.js';
 import BranchSelector from '../components/BranchSelector.js';
+import { useDateRange } from '../contexts/DateRangeContext.js';
+import DateRangePicker from '../components/DateRangePicker.js';
 
 export default function GraphPage() {
   const { owner, repo } = useParams<{ owner: string; repo: string }>();
   const [selectedBranches, setSelectedBranches] = useState<string[]>([]);
   const [selectedOid, setSelectedOid] = useState<string | null>(null);
+
+  const { since, until } = useDateRange();
 
   const { data: overview, isLoading: overviewLoading } = useQuery({
     queryKey: ['overview', owner, repo],
@@ -52,7 +56,10 @@ export default function GraphPage() {
     owner!,
     repo!,
     effectiveBranches,
-    !!owner && !!repo && effectiveBranches.length > 0
+    !!owner && !!repo && effectiveBranches.length > 0,
+    false,
+    since,
+    until
   );
 
   const { commit: commitDetail, isLoading: detailLoading } = useCommitDetail(
@@ -91,6 +98,7 @@ export default function GraphPage() {
           gap: '0.75rem',
           background: '#10141a',
           flexShrink: 0,
+          flexWrap: 'wrap',
         }}
       >
         {/* Repo name */}
@@ -117,6 +125,9 @@ export default function GraphPage() {
             disabled={overviewLoading}
           />
         </div>
+
+        {/* Date range picker */}
+        <DateRangePicker />
 
         {/* Stats */}
         {overview && (

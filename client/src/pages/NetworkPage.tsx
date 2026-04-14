@@ -7,11 +7,15 @@ import type { CommitNode } from '../lib/api.js';
 import NetworkGraphVisualization from '../components/NetworkGraphVisualization.js';
 import CommitDetail from '../components/CommitDetail.js';
 import BranchSelector from '../components/BranchSelector.js';
+import { useDateRange } from '../contexts/DateRangeContext.js';
+import DateRangePicker from '../components/DateRangePicker.js';
 
 export default function NetworkPage() {
   const { owner, repo } = useParams<{ owner: string; repo: string }>();
   const [selectedBranches, setSelectedBranches] = useState<string[]>([]);
   const [selectedOid, setSelectedOid] = useState<string | null>(null);
+
+  const { since, until } = useDateRange();
 
   const { data: overview, isLoading: overviewLoading } = useQuery({
     queryKey: ['overview', owner, repo],
@@ -57,7 +61,9 @@ export default function NetworkPage() {
     repo!,
     fetchBranches,
     !!owner && !!repo && fetchBranches.length > 0,
-    false // don't auto-fetch all pages — user clicks Load More
+    false, // don't auto-fetch all pages — user clicks Load More
+    since,
+    until
   );
 
   // Phase 2: Load other live branches ON DEMAND (not automatic)
@@ -68,12 +74,12 @@ export default function NetworkPage() {
   const [loadingExtra, setLoadingExtra] = useState(false);
   const BRANCH_BATCH_SIZE = 10;
 
-  // Reset extra state when repo changes
+  // Reset extra state when repo or date range changes
   useEffect(() => {
     setLoadedBranchIdx(0);
     setExtraCommits([]);
     setExtraBranchMap(new Map());
-  }, [owner, repo]);
+  }, [owner, repo, since, until]);
 
   // Load next batch of branches (called by button click)
   function loadMoreBranches() {
@@ -94,7 +100,7 @@ export default function NetworkPage() {
       const branch = batchToLoad[currentIdx]!;
       currentIdx++;
 
-      api.repos.commits(owner!, repo!, branch).then((page) => {
+      api.repos.commits(owner!, repo!, branch, undefined, since, until).then((page) => {
         setExtraCommits((prev) => {
           const existingOids = new Set(prev.map((c) => c.oid));
           const newCommits = page.nodes.filter((c) => !existingOids.has(c.oid));
@@ -185,6 +191,7 @@ export default function NetworkPage() {
           gap: '0.75rem',
           background: '#10141a',
           flexShrink: 0,
+          flexWrap: 'wrap',
         }}
       >
         <span
@@ -209,6 +216,9 @@ export default function NetworkPage() {
             disabled={overviewLoading}
           />
         </div>
+
+        {/* Date range picker */}
+        <DateRangePicker />
 
         {/* View label + commit count */}
         <div

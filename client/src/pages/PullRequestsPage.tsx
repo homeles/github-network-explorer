@@ -3,6 +3,8 @@ import { useParams } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../lib/api.js';
 import type { PullRequest } from '../lib/api.js';
+import { useDateRange } from '../contexts/DateRangeContext.js';
+import DateRangePicker from '../components/DateRangePicker.js';
 
 type PRState = 'OPEN' | 'CLOSED' | 'MERGED';
 type SortMode = 'newest' | 'oldest' | 'most-comments' | 'most-reviews';
@@ -212,6 +214,8 @@ export default function PullRequestsPage() {
   const [activeState, setActiveState] = useState<PRState>('OPEN');
   const [sortMode, setSortMode] = useState<SortMode>('newest');
 
+  const { since, until } = useDateRange();
+
   const { data: prs, isLoading, error } = useQuery({
     queryKey: ['pulls', owner, repo, activeState],
     queryFn: () => api.repos.pullRequests(owner!, repo!, activeState),
@@ -255,6 +259,18 @@ export default function PullRequestsPage() {
       })
     : [];
 
+  // Client-side date filtering on createdAt
+  const filteredPrs = sortedPrs.filter((pr) => {
+    const created = new Date(pr.createdAt).getTime();
+    if (since && created < new Date(since).getTime()) return false;
+    if (until && created > new Date(until).getTime()) return false;
+    return true;
+  });
+
+  const isDateFiltered = !!since || !!until;
+  const totalCount = sortedPrs.length;
+  const filteredCount = filteredPrs.length;
+
   return (
     <div
       style={{
@@ -275,6 +291,7 @@ export default function PullRequestsPage() {
           display: 'flex',
           alignItems: 'center',
           gap: '0.5rem',
+          flexWrap: 'wrap',
         }}
       >
         <span style={{ fontSize: '1rem', marginRight: '0.25rem' }}>📋</span>
@@ -287,6 +304,10 @@ export default function PullRequestsPage() {
           {owner}/{repo}
         </span>
         <div style={{ flexGrow: 1 }} />
+
+        {/* Date range picker */}
+        <DateRangePicker />
+
         {/* Sort controls */}
         <span style={{ color: '#8b949e', fontSize: '0.8125rem' }}>Sort:</span>
         {(['newest', 'oldest', 'most-comments', 'most-reviews'] as SortMode[]).map((mode) => (
@@ -323,6 +344,7 @@ export default function PullRequestsPage() {
           background: '#161b22',
           flexShrink: 0,
           padding: '0 1rem',
+          alignItems: 'center',
         }}
       >
         {tabs.map((tab) => (
@@ -344,6 +366,23 @@ export default function PullRequestsPage() {
             {tab.label}
           </button>
         ))}
+
+        {/* Date filter count badge */}
+        {isDateFiltered && !isLoading && prs && (
+          <span
+            style={{
+              marginLeft: 'auto',
+              color: '#8b949e',
+              fontSize: '0.8125rem',
+              background: '#161b22',
+              border: '1px solid #21262d',
+              borderRadius: 12,
+              padding: '0.15rem 0.6rem',
+            }}
+          >
+            {filteredCount} of {totalCount} shown
+          </span>
+        )}
       </div>
 
       {/* Content */}
@@ -400,9 +439,26 @@ export default function PullRequestsPage() {
               No {activeState.toLowerCase()} pull requests
             </span>
           </div>
+        ) : filteredPrs.length === 0 ? (
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              height: '200px',
+              gap: '0.5rem',
+              color: '#8b949e',
+            }}
+          >
+            <span style={{ fontSize: '2rem' }}>📋</span>
+            <span style={{ fontSize: '0.9375rem' }}>
+              No pull requests in the selected date range
+            </span>
+          </div>
         ) : (
           <div>
-            {sortedPrs.map((pr) => (
+            {filteredPrs.map((pr) => (
               <PRRow key={pr.number} pr={pr} />
             ))}
           </div>

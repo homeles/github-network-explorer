@@ -5,6 +5,7 @@ import { useAuth } from '../hooks/useAuth.js';
 import { useOrgs, useOrgRepos } from '../hooks/useRepos.js';
 import { api } from '../lib/api.js';
 import type { UserRepo, UserOrg } from '../lib/api.js';
+import { DateRangeProvider } from '../contexts/DateRangeContext.js';
 
 export default function AppLayout() {
   const { isAuthenticated, user, isLoading } = useAuth();
@@ -594,7 +595,9 @@ export default function AppLayout() {
         {/* Main content */}
         <main style={{ flex: 1, overflow: 'auto', position: 'relative' }}>
           {isAuthenticated ? (
-            <Outlet />
+            <DateRangeProvider>
+              <Outlet />
+            </DateRangeProvider>
           ) : (
             <div
               style={{
