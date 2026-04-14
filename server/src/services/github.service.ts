@@ -432,9 +432,10 @@ export class GitHubService {
       return dateStr.slice(0, 10);
     }
 
-    // Determine the date range bounds (YYYY-MM-DD) for filtering bucketed days.
-    // GitHub's API filters by committer date, but we bucket by author date —
-    // so rebased/cherry-picked commits can fall outside the range.
+    // Determine the date range bounds (YYYY-MM-DD) for filtering.
+    // Both the GitHub API and our bucketing use committer date, so these
+    // should be consistent. The inRange filter catches edge cases from
+    // timezone bucketing differences.
     const sinceDateBound = period.since ? getDay(period.since) : undefined;
     const untilDateBound = period.until ? getDay(period.until) : undefined;
 
@@ -444,7 +445,7 @@ export class GitHubService {
       return true;
     }
 
-    // Pre-filter commits to only those whose author date falls in range.
+    // Pre-filter commits to only those whose committer date falls in range.
     // This keeps all downstream aggregation (dirs, files, contributors) consistent.
     const filteredCommitDetails = commitDetails.filter(c => inRange(getDay(c.date)));
     const filteredAllCommits = (allCommits ?? commitDetails).filter(c => inRange(getDay(c.date)));
@@ -578,23 +579,6 @@ export class GitHubService {
     const until = options.until;
     const pathFilter = options.path;
 
-    // Pad the `until` sent to the GitHub API by the length of the selected range
-    // (minimum 3 days, maximum 7 days). GitHub's List Commits API filters by
-    // COMMITTER date, but we bucket by AUTHOR date. Rebased commits can have
-    // committer dates days after their author date, so we need a small buffer
-    // to catch them. The precise filtering is done by buildCodeFrequencyData.
-    let apiUntil = until;
-    if (until && since) {
-      const rangeMs = new Date(until).getTime() - new Date(since).getTime();
-      const rangeDays = rangeMs / (24 * 60 * 60 * 1000);
-      const padDays = Math.max(3, Math.min(7, Math.ceil(rangeDays)));
-      const padded = new Date(new Date(until).getTime() + padDays * 24 * 60 * 60 * 1000);
-      apiUntil = padded.toISOString();
-    } else if (until) {
-      const padded = new Date(new Date(until).getTime() + 3 * 24 * 60 * 60 * 1000);
-      apiUntil = padded.toISOString();
-    }
-
     // 1. List commits (paginated)
     type CommitBasic = { sha: string; date: string; author: { login: string | null; avatarUrl: string; name: string | null }; message: string };
     const allCommitShas: CommitBasic[] = [];
@@ -606,7 +590,7 @@ export class GitHubService {
       const params: { owner: string; repo: string; per_page: number; page: number; since?: string; until?: string; path?: string } =
         { owner, repo, per_page: perPage, page };
       if (since) params.since = since;
-      if (apiUntil) params.until = apiUntil;
+      if (until) params.until = until;
       if (pathFilter) params.path = pathFilter;
 
       const resp = await this.octokit.request('GET /repos/{owner}/{repo}/commits', params);
@@ -615,7 +599,7 @@ export class GitHubService {
       for (const c of resp.data) {
         allCommitShas.push({
           sha: c.sha,
-          date: (c.commit.author?.date ?? c.commit.committer?.date ?? '') as string,
+          date: (c.commit.committer?.date ?? c.commit.author?.date ?? '') as string,
           author: { login: c.author?.login ?? null, avatarUrl: c.author?.avatar_url ?? '', name: c.commit.author?.name ?? null },
           message: c.commit.message ?? '',
         });
