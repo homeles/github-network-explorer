@@ -269,7 +269,8 @@ export class GitHubService {
     repo: string,
     state?: string
   ): Promise<PullRequestSummary[]> {
-    const states = state ? [state.toUpperCase()] : ['OPEN'];
+    const upper = state?.toUpperCase();
+    const states = upper === 'ALL' ? ['OPEN', 'CLOSED', 'MERGED'] : upper ? [upper] : ['OPEN'];
     const query = `
       query($owner: String!, $repo: String!, $states: [PullRequestState!]) {
         repository(owner: $owner, name: $repo) {

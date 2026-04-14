@@ -6,7 +6,7 @@ import type { PullRequest } from '../lib/api.js';
 import { useDateRange } from '../contexts/DateRangeContext.js';
 import DateRangePicker from '../components/DateRangePicker.js';
 
-type PRState = 'OPEN' | 'CLOSED' | 'MERGED';
+type PRState = 'ALL' | 'OPEN' | 'CLOSED' | 'MERGED';
 type SortMode = 'newest' | 'oldest' | 'most-comments' | 'most-reviews';
 
 function timeAgo(dateStr: string): string {
@@ -574,6 +574,7 @@ export default function PullRequestsPage() {
   }
 
   const tabs: { label: string; value: PRState }[] = [
+    { label: 'All', value: 'ALL' },
     { label: 'Open', value: 'OPEN' },
     { label: 'Closed', value: 'CLOSED' },
     { label: 'Merged', value: 'MERGED' },
@@ -785,7 +786,7 @@ export default function PullRequestsPage() {
           >
             <span style={{ fontSize: '2rem' }}>📋</span>
             <span style={{ fontSize: '0.9375rem' }}>
-              No {activeState.toLowerCase()} pull requests
+              No {activeState === 'ALL' ? '' : activeState.toLowerCase() + ' '}pull requests
             </span>
           </div>
         ) : filteredPrs.length === 0 ? (
