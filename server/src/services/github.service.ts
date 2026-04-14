@@ -639,7 +639,11 @@ export class GitHubService {
           await new Promise(r => setTimeout(r, 1000));
           return fetchWithRetry(c, retries - 1);
         }
-        throw err;
+        // On final failure, return the commit with zero stats so it's still counted
+        return {
+          sha: c.sha, date: c.date, author: c.author, message: c.message,
+          additions: 0, deletions: 0, files: [],
+        };
       }
     };
 
@@ -648,6 +652,7 @@ export class GitHubService {
       const batch = allCommitShas.slice(i, i + BATCH);
       const results = await Promise.allSettled(batch.map(c => fetchWithRetry(c)));
       for (const r of results) {
+        // fetchWithRetry always resolves (returns zero-stat fallback on failure)
         if (r.status === 'fulfilled') commitDetails.push(r.value);
       }
 
