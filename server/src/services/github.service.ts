@@ -416,13 +416,19 @@ export class GitHubService {
       files: Array<{ filename: string; additions: number; deletions: number; changes: number; status: string }>;
     }>,
     period: { since?: string; until?: string },
-    allCommits?: Array<{ sha: string; date: string; author: { login: string | null; avatarUrl: string; name: string | null }; message: string }>
+    allCommits?: Array<{ sha: string; date: string; author: { login: string | null; avatarUrl: string; name: string | null }; message: string }>,
+    tzOffsetMinutes?: number
   ): CodeFrequencyData {
     function getDay(dateStr: string): string {
-      // Use the author's local date from the ISO string.
-      // Git dates like '2026-03-07T20:00:00-06:00' slice to '2026-03-07',
-      // matching what GitHub's web UI shows (author's local date).
-      // For UTC dates like '2026-03-07T04:30:00Z', this also gives the correct date.
+      // Bucket by the viewer's local date.
+      // tzOffsetMinutes is the client's getTimezoneOffset() (e.g. 360 for CST/UTC-6).
+      // We subtract it from UTC to get the viewer's local date.
+      if (tzOffsetMinutes !== undefined) {
+        const utc = new Date(dateStr).getTime();
+        const local = new Date(utc - tzOffsetMinutes * 60000);
+        return local.toISOString().slice(0, 10);
+      }
+      // Fallback: use author's local date from the ISO string
       return dateStr.slice(0, 10);
     }
 
@@ -534,7 +540,7 @@ export class GitHubService {
   async getCodeFrequency(
     owner: string,
     repo: string,
-    options: { since?: string; until?: string; path?: string; maxCommits?: number } = {}
+    options: { since?: string; until?: string; path?: string; maxCommits?: number; tzOffset?: number } = {}
   ): Promise<CodeFrequencyData> {
     return this.getCodeFrequencyWithProgress(owner, repo, options, () => {});
   }
@@ -542,7 +548,7 @@ export class GitHubService {
   async getCodeFrequencyWithProgress(
     owner: string,
     repo: string,
-    options: { since?: string; until?: string; path?: string; maxCommits?: number },
+    options: { since?: string; until?: string; path?: string; maxCommits?: number; tzOffset?: number },
     onProgress: (event: {
       phase: 'listing' | 'analyzing';
       loaded: number;
@@ -628,14 +634,14 @@ export class GitHubService {
           phase: 'analyzing',
           loaded: commitDetails.length,
           total: allCommitShas.length,
-          partialData: includePartial ? this.buildCodeFrequencyData(commitDetails, options, allCommitShas) : undefined,
+          partialData: includePartial ? this.buildCodeFrequencyData(commitDetails, options, allCommitShas, options.tzOffset) : undefined,
         });
         lastReportAt = commitDetails.length;
         if (includePartial) lastPartialAt = commitDetails.length;
       }
     }
 
-    return this.buildCodeFrequencyData(commitDetails, options, allCommitShas);
+    return this.buildCodeFrequencyData(commitDetails, options, allCommitShas, options.tzOffset);
   }
 
   async getUserRepos(): Promise<UserRepo[]> {

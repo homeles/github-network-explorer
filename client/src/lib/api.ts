@@ -258,6 +258,7 @@ export const api = {
       if (options?.until) params.set('until', options.until);
       if (options?.path) params.set('path', options.path);
       if (options?.maxCommits !== undefined) params.set('maxCommits', String(options.maxCommits));
+      params.set('tzOffset', String(new Date().getTimezoneOffset()));
       const qs = params.toString();
       return apiFetch<CodeFrequencyData>(
         `/api/repos/${owner}/${repo}/code-frequency${qs ? `?${qs}` : ''}`
@@ -274,6 +275,7 @@ export const api = {
       if (options?.until) params.set('until', options.until);
       if (options?.path) params.set('path', options.path);
       if (options?.maxCommits !== undefined) params.set('maxCommits', String(options.maxCommits));
+      params.set('tzOffset', String(new Date().getTimezoneOffset()));
       return new EventSource(`/api/repos/${owner}/${repo}/code-frequency?${params}`);
     },
   },
