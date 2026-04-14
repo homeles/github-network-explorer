@@ -578,15 +578,20 @@ export class GitHubService {
     const until = options.until;
     const pathFilter = options.path;
 
-    // Pad the `until` sent to the GitHub API by 14 days.
-    // GitHub's List Commits API filters by COMMITTER date, but we bucket by
-    // AUTHOR date. Rebased/cherry-picked commits can have committer dates days
-    // or weeks after their author date. Without padding, such commits are
-    // excluded by the API even though their author date is in range.
-    // The precise filtering is done later by buildCodeFrequencyData's inRange().
+    // Pad the `until` sent to the GitHub API by the length of the selected range
+    // (minimum 3 days, maximum 7 days). GitHub's List Commits API filters by
+    // COMMITTER date, but we bucket by AUTHOR date. Rebased commits can have
+    // committer dates days after their author date, so we need a small buffer
+    // to catch them. The precise filtering is done by buildCodeFrequencyData.
     let apiUntil = until;
-    if (until) {
-      const padded = new Date(new Date(until).getTime() + 14 * 24 * 60 * 60 * 1000);
+    if (until && since) {
+      const rangeMs = new Date(until).getTime() - new Date(since).getTime();
+      const rangeDays = rangeMs / (24 * 60 * 60 * 1000);
+      const padDays = Math.max(3, Math.min(7, Math.ceil(rangeDays)));
+      const padded = new Date(new Date(until).getTime() + padDays * 24 * 60 * 60 * 1000);
+      apiUntil = padded.toISOString();
+    } else if (until) {
+      const padded = new Date(new Date(until).getTime() + 3 * 24 * 60 * 60 * 1000);
       apiUntil = padded.toISOString();
     }
 
