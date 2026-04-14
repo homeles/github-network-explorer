@@ -114,7 +114,7 @@ function CIStatusIcon({ rollup }: { pr: PullRequest; rollup: PullRequest['status
         <div
           style={{
             position: 'absolute',
-            bottom: 'calc(100% + 6px)',
+            top: 'calc(100% + 6px)',
             right: 0,
             background: '#1c2128',
             border: '1px solid #30363d',
