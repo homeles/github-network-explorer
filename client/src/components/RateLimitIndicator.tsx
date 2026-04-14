@@ -30,8 +30,6 @@ export function RateLimitIndicator() {
 
   const { limit, remaining, used, reset } = data;
   const ratio = limit > 0 ? remaining / limit : 1;
-  const pct = ratio * 100;
-
   let ringColor = '#58a6ff';
   let textColor = '#8b949e';
   if (ratio < 0.05) {
