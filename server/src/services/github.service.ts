@@ -419,7 +419,9 @@ export class GitHubService {
     allCommits?: Array<{ sha: string; date: string; author: { login: string | null; avatarUrl: string; name: string | null }; message: string }>
   ): CodeFrequencyData {
     function getDay(dateStr: string): string {
-      return dateStr.slice(0, 10);
+      // Normalize to UTC date — raw git dates may include timezone offsets
+      // (e.g. '2026-03-03T20:00:00-06:00' is actually March 4 UTC)
+      return new Date(dateStr).toISOString().slice(0, 10);
     }
 
     // Build commit counts from ALL listed commits (not just successfully analyzed ones)
