@@ -578,6 +578,18 @@ export class GitHubService {
     const until = options.until;
     const pathFilter = options.path;
 
+    // Pad the `until` sent to the GitHub API by 14 days.
+    // GitHub's List Commits API filters by COMMITTER date, but we bucket by
+    // AUTHOR date. Rebased/cherry-picked commits can have committer dates days
+    // or weeks after their author date. Without padding, such commits are
+    // excluded by the API even though their author date is in range.
+    // The precise filtering is done later by buildCodeFrequencyData's inRange().
+    let apiUntil = until;
+    if (until) {
+      const padded = new Date(new Date(until).getTime() + 14 * 24 * 60 * 60 * 1000);
+      apiUntil = padded.toISOString();
+    }
+
     // 1. List commits (paginated)
     type CommitBasic = { sha: string; date: string; author: { login: string | null; avatarUrl: string; name: string | null }; message: string };
     const allCommitShas: CommitBasic[] = [];
@@ -589,7 +601,7 @@ export class GitHubService {
       const params: { owner: string; repo: string; per_page: number; page: number; since?: string; until?: string; path?: string } =
         { owner, repo, per_page: perPage, page };
       if (since) params.since = since;
-      if (until) params.until = until;
+      if (apiUntil) params.until = apiUntil;
       if (pathFilter) params.path = pathFilter;
 
       const resp = await this.octokit.request('GET /repos/{owner}/{repo}/commits', params);
