@@ -416,49 +416,72 @@ export class GitHubService {
       files: Array<{ filename: string; additions: number; deletions: number; changes: number; status: string }>;
     }>,
     period: { since?: string; until?: string },
-    allCommits?: Array<{ sha: string; date: string; author: { login: string | null; avatarUrl: string; name: string | null }; message: string }>
+    allCommits?: Array<{ sha: string; date: string; author: { login: string | null; avatarUrl: string; name: string | null }; message: string }>,
+    tzOffsetMinutes?: number
   ): CodeFrequencyData {
-    function getWeekStart(dateStr: string): string {
-      const d = new Date(dateStr);
-      const day = d.getUTCDay();
-      const diff = day === 0 ? 0 : day;
-      d.setUTCDate(d.getUTCDate() - diff);
-      return d.toISOString().slice(0, 10);
+    function getDay(dateStr: string): string {
+      // Bucket by the viewer's local date.
+      // tzOffsetMinutes is the client's getTimezoneOffset() (e.g. 360 for CST/UTC-6).
+      // We subtract it from UTC to get the viewer's local date.
+      if (tzOffsetMinutes !== undefined) {
+        const utc = new Date(dateStr).getTime();
+        const local = new Date(utc - tzOffsetMinutes * 60000);
+        return local.toISOString().slice(0, 10);
+      }
+      // Fallback: use author's local date from the ISO string
+      return dateStr.slice(0, 10);
     }
 
+    // Determine the date range bounds (YYYY-MM-DD) for filtering.
+    // Both the GitHub API and our bucketing use committer date, so these
+    // should be consistent. The inRange filter catches edge cases from
+    // timezone bucketing differences.
+    const sinceDateBound = period.since ? getDay(period.since) : undefined;
+    const untilDateBound = period.until ? getDay(period.until) : undefined;
+
+    function inRange(day: string): boolean {
+      if (sinceDateBound && day < sinceDateBound) return false;
+      if (untilDateBound && day > untilDateBound) return false;
+      return true;
+    }
+
+    // Pre-filter commits to only those whose committer date falls in range.
+    // This keeps all downstream aggregation (dirs, files, contributors) consistent.
+    const filteredCommitDetails = commitDetails.filter(c => inRange(getDay(c.date)));
+    const filteredAllCommits = (allCommits ?? commitDetails).filter(c => inRange(getDay(c.date)));
+
     // Build commit counts from ALL listed commits (not just successfully analyzed ones)
-    const weekCommitCounts = new Map<string, number>();
-    const commitsSource = allCommits ?? commitDetails;
-    for (const c of commitsSource) {
-      const week = getWeekStart(c.date);
-      weekCommitCounts.set(week, (weekCommitCounts.get(week) ?? 0) + 1);
+    const dayCommitCounts = new Map<string, number>();
+    for (const c of filteredAllCommits) {
+      const day = getDay(c.date);
+      dayCommitCounts.set(day, (dayCommitCounts.get(day) ?? 0) + 1);
     }
 
     // Build stats from analyzed commits (may be incomplete due to API failures)
-    const weekMap = new Map<string, { additions: number; deletions: number; commitCount: number }>();
-    for (const c of commitDetails) {
-      const week = getWeekStart(c.date);
-      const entry = weekMap.get(week) ?? { additions: 0, deletions: 0, commitCount: 0 };
+    const dayMap = new Map<string, { additions: number; deletions: number; commitCount: number }>();
+    for (const c of filteredCommitDetails) {
+      const day = getDay(c.date);
+      const entry = dayMap.get(day) ?? { additions: 0, deletions: 0, commitCount: 0 };
       entry.additions += c.additions;
       entry.deletions += c.deletions;
       entry.commitCount++;
-      weekMap.set(week, entry);
+      dayMap.set(day, entry);
     }
 
     // Merge: use listing commit counts, analyzed stats
-    const allWeeks = new Set([...weekCommitCounts.keys(), ...weekMap.keys()]);
-    const mergedWeekMap = new Map<string, { additions: number; deletions: number; commitCount: number }>();
-    for (const week of allWeeks) {
-      const stats = weekMap.get(week) ?? { additions: 0, deletions: 0, commitCount: 0 };
-      mergedWeekMap.set(week, {
+    const allDays = new Set([...dayCommitCounts.keys(), ...dayMap.keys()]);
+    const mergedDayMap = new Map<string, { additions: number; deletions: number; commitCount: number }>();
+    for (const day of allDays) {
+      const stats = dayMap.get(day) ?? { additions: 0, deletions: 0, commitCount: 0 };
+      mergedDayMap.set(day, {
         additions: stats.additions,
         deletions: stats.deletions,
-        commitCount: weekCommitCounts.get(week) ?? stats.commitCount,
+        commitCount: dayCommitCounts.get(day) ?? stats.commitCount,
       });
     }
-    const timeSeries = Array.from(mergedWeekMap.entries())
+    const timeSeries = Array.from(mergedDayMap.entries())
       .sort(([a], [b]) => a.localeCompare(b))
-      .map(([weekStart, v]) => ({ weekStart, ...v }));
+      .map(([date, v]) => ({ date, ...v }));
 
     interface DirNode {
       path: string; additions: number; deletions: number; changes: number;
@@ -469,7 +492,7 @@ export class GitHubService {
     }
 
     const root = makeDirNode('');
-    for (const c of commitDetails) {
+    for (const c of filteredCommitDetails) {
       const seenDirsThisCommit = new Set<string>();
       for (const f of c.files) {
         const parts = f.filename.split('/');
@@ -500,7 +523,7 @@ export class GitHubService {
     const directoryBreakdown = Array.from(root.children.values()).map(toDirectoryStats);
 
     const fileMap = new Map<string, { additions: number; deletions: number; changes: number; commitCount: number }>();
-    for (const c of commitDetails) {
+    for (const c of filteredCommitDetails) {
       for (const f of c.files) {
         const entry = fileMap.get(f.filename) ?? { additions: 0, deletions: 0, changes: 0, commitCount: 0 };
         entry.additions += f.additions; entry.deletions += f.deletions;
@@ -514,7 +537,7 @@ export class GitHubService {
       .slice(0, 50);
 
     const contribMap = new Map<string, { login: string | null; name: string | null; avatarUrl: string; additions: number; deletions: number; commitCount: number }>();
-    for (const c of commitDetails) {
+    for (const c of filteredCommitDetails) {
       const key = c.author.login ?? c.author.name ?? 'unknown';
       const entry = contribMap.get(key) ?? { login: c.author.login, name: c.author.name, avatarUrl: c.author.avatarUrl, additions: 0, deletions: 0, commitCount: 0 };
       entry.additions += c.additions; entry.deletions += c.deletions; entry.commitCount++;
@@ -523,10 +546,10 @@ export class GitHubService {
     const contributors = Array.from(contribMap.values())
       .sort((a, b) => (b.additions + b.deletions) - (a.additions + a.deletions));
 
-    const allDates = (allCommits ?? commitDetails).map((c) => c.date).filter(Boolean).sort();
+    const allDates = filteredAllCommits.map((c) => c.date).filter(Boolean).sort();
     return {
       timeSeries, directoryBreakdown, topFiles, contributors,
-      totalCommitsAnalyzed: (allCommits ?? commitDetails).length,
+      totalCommitsAnalyzed: filteredAllCommits.length,
       period: { since: period.since ?? allDates[0] ?? '', until: period.until ?? allDates[allDates.length - 1] ?? '' },
     };
   }
@@ -534,7 +557,7 @@ export class GitHubService {
   async getCodeFrequency(
     owner: string,
     repo: string,
-    options: { since?: string; until?: string; path?: string; maxCommits?: number } = {}
+    options: { since?: string; until?: string; path?: string; maxCommits?: number; tzOffset?: number } = {}
   ): Promise<CodeFrequencyData> {
     return this.getCodeFrequencyWithProgress(owner, repo, options, () => {});
   }
@@ -542,7 +565,7 @@ export class GitHubService {
   async getCodeFrequencyWithProgress(
     owner: string,
     repo: string,
-    options: { since?: string; until?: string; path?: string; maxCommits?: number },
+    options: { since?: string; until?: string; path?: string; maxCommits?: number; tzOffset?: number },
     onProgress: (event: {
       phase: 'listing' | 'analyzing';
       loaded: number;
@@ -576,7 +599,7 @@ export class GitHubService {
       for (const c of resp.data) {
         allCommitShas.push({
           sha: c.sha,
-          date: (c.commit.author?.date ?? c.commit.committer?.date ?? '') as string,
+          date: (c.commit.committer?.date ?? c.commit.author?.date ?? '') as string,
           author: { login: c.author?.login ?? null, avatarUrl: c.author?.avatar_url ?? '', name: c.commit.author?.name ?? null },
           message: c.commit.message ?? '',
         });
@@ -600,24 +623,37 @@ export class GitHubService {
     let lastReportAt = 0;
     let lastPartialAt = 0;
 
+    const fetchWithRetry = async (c: CommitBasic, retries = 2): Promise<CommitDetailItem> => {
+      try {
+        const detail = await this.octokit.request('GET /repos/{owner}/{repo}/commits/{ref}', { owner, repo, ref: c.sha });
+        return {
+          sha: c.sha, date: c.date, author: c.author, message: c.message,
+          additions: detail.data.stats?.additions ?? 0,
+          deletions: detail.data.stats?.deletions ?? 0,
+          files: (detail.data.files ?? []).map((f) => ({
+            filename: f.filename ?? '', additions: f.additions ?? 0,
+            deletions: f.deletions ?? 0, changes: f.changes ?? 0, status: f.status ?? 'modified',
+          })),
+        };
+      } catch (err) {
+        if (retries > 0) {
+          await new Promise(r => setTimeout(r, 1000));
+          return fetchWithRetry(c, retries - 1);
+        }
+        // On final failure, return the commit with zero stats so it's still counted
+        return {
+          sha: c.sha, date: c.date, author: c.author, message: c.message,
+          additions: 0, deletions: 0, files: [],
+        };
+      }
+    };
+
     for (let i = 0; i < allCommitShas.length; i += BATCH) {
       if (signal?.aborted) break;
       const batch = allCommitShas.slice(i, i + BATCH);
-      const results = await Promise.allSettled(
-        batch.map(async (c) => {
-          const detail = await this.octokit.request('GET /repos/{owner}/{repo}/commits/{ref}', { owner, repo, ref: c.sha });
-          return {
-            sha: c.sha, date: c.date, author: c.author, message: c.message,
-            additions: detail.data.stats?.additions ?? 0,
-            deletions: detail.data.stats?.deletions ?? 0,
-            files: (detail.data.files ?? []).map((f) => ({
-              filename: f.filename ?? '', additions: f.additions ?? 0,
-              deletions: f.deletions ?? 0, changes: f.changes ?? 0, status: f.status ?? 'modified',
-            })),
-          };
-        })
-      );
+      const results = await Promise.allSettled(batch.map(c => fetchWithRetry(c)));
       for (const r of results) {
+        // fetchWithRetry always resolves (returns zero-stat fallback on failure)
         if (r.status === 'fulfilled') commitDetails.push(r.value);
       }
 
@@ -628,14 +664,20 @@ export class GitHubService {
           phase: 'analyzing',
           loaded: commitDetails.length,
           total: allCommitShas.length,
-          partialData: includePartial ? this.buildCodeFrequencyData(commitDetails, options, allCommitShas) : undefined,
+          partialData: includePartial ? this.buildCodeFrequencyData(commitDetails, options, allCommitShas, options.tzOffset) : undefined,
         });
         lastReportAt = commitDetails.length;
         if (includePartial) lastPartialAt = commitDetails.length;
       }
     }
 
-    return this.buildCodeFrequencyData(commitDetails, options, allCommitShas);
+    return this.buildCodeFrequencyData(commitDetails, options, allCommitShas, options.tzOffset);
+  }
+
+  async getRateLimit(): Promise<{ limit: number; remaining: number; used: number; reset: number }> {
+    const resp = await this.octokit.request('GET /rate_limit');
+    const core = resp.data.rate;
+    return { limit: core.limit, remaining: core.remaining, used: core.used, reset: core.reset };
   }
 
   async getUserRepos(): Promise<UserRepo[]> {

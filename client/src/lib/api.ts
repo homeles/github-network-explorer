@@ -4,6 +4,13 @@ export interface ApiError {
   error: string;
 }
 
+export interface RateLimitInfo {
+  limit: number;
+  remaining: number;
+  used: number;
+  reset: number; // Unix timestamp when the rate limit resets
+}
+
 export interface GitActor {
   name: string | null;
   email: string | null;
@@ -149,7 +156,7 @@ export interface DirectoryStats {
 
 export interface CodeFrequencyData {
   timeSeries: Array<{
-    weekStart: string;
+    date: string;
     additions: number;
     deletions: number;
     commitCount: number;
@@ -214,6 +221,7 @@ async function apiFetch<T>(url: string, options?: RequestInit): Promise<T> {
 }
 
 export const api = {
+  rateLimit: () => apiFetch<RateLimitInfo>('/api/rate-limit'),
   auth: {
     status: () => apiFetch<AuthStatus>('/api/auth/status'),
     initiateLogin: () =>
@@ -258,6 +266,7 @@ export const api = {
       if (options?.until) params.set('until', options.until);
       if (options?.path) params.set('path', options.path);
       if (options?.maxCommits !== undefined) params.set('maxCommits', String(options.maxCommits));
+      params.set('tzOffset', String(new Date().getTimezoneOffset()));
       const qs = params.toString();
       return apiFetch<CodeFrequencyData>(
         `/api/repos/${owner}/${repo}/code-frequency${qs ? `?${qs}` : ''}`
@@ -274,6 +283,7 @@ export const api = {
       if (options?.until) params.set('until', options.until);
       if (options?.path) params.set('path', options.path);
       if (options?.maxCommits !== undefined) params.set('maxCommits', String(options.maxCommits));
+      params.set('tzOffset', String(new Date().getTimezoneOffset()));
       return new EventSource(`/api/repos/${owner}/${repo}/code-frequency?${params}`);
     },
   },

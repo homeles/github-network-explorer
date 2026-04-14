@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react';
 import * as d3 from 'd3';
 
 interface TimeSeriesPoint {
-  weekStart: string;
+  date: string;
   additions: number;
   deletions: number;
   commitCount: number;
@@ -22,7 +22,7 @@ export default function CodeFrequencyChart({ data }: Props) {
     const container = containerRef.current;
     const width = container.clientWidth;
     const height = 400;
-    const margin = { top: 20, right: 20, bottom: 40, left: 60 };
+    const margin = { top: 20, right: 20, bottom: 60, left: 60 };
     const innerWidth = width - margin.left - margin.right;
     const innerHeight = height - margin.top - margin.bottom;
 
@@ -34,7 +34,8 @@ export default function CodeFrequencyChart({ data }: Props) {
 
     const parsed = data.map((d) => ({
       ...d,
-      date: new Date(d.weekStart + 'T00:00:00Z'),
+      // Parse as local midnight so d3.timeFormat shows the correct local date
+      date: new Date(d.date + 'T00:00:00'),
     }));
 
     const maxVal = d3.max(parsed, (d) => Math.max(d.additions, d.deletions)) ?? 1;
@@ -106,17 +107,44 @@ export default function CodeFrequencyChart({ data }: Props) {
       .attr('d', deletionsArea);
 
     // X axis
+    const spanDays = parsed.length > 1
+      ? (parsed[parsed.length - 1].date.getTime() - parsed[0].date.getTime()) / 86400000
+      : 0;
+
+    // Adaptive tick format and count based on date span
+    let tickFmt: string;
+    let tickCount: number;
+    if (spanDays <= 14) {
+      tickFmt = '%b %d';
+      tickCount = Math.min(parsed.length, 14);
+    } else if (spanDays <= 60) {
+      tickFmt = '%b %d';
+      tickCount = Math.min(Math.ceil(spanDays / 7), 9); // ~weekly ticks
+    } else if (spanDays <= 180) {
+      tickFmt = '%b %d';
+      tickCount = Math.min(Math.ceil(spanDays / 14), 8); // ~biweekly ticks
+    } else {
+      tickFmt = '%b %Y';
+      tickCount = Math.min(Math.ceil(spanDays / 30), 12); // ~monthly ticks
+    }
+
     g.append('g')
       .attr('transform', `translate(0,${innerHeight})`)
       .call(
         d3.axisBottom(xScale)
-          .ticks(Math.min(parsed.length, 8))
-          .tickFormat((d) => d3.timeFormat('%b %Y')(d as Date))
+          .ticks(tickCount)
+          .tickFormat((d) => d3.timeFormat(tickFmt)(d as Date))
       )
       .call((gg) => {
         gg.select('.domain').attr('stroke', '#30363d');
         gg.selectAll('.tick line').attr('stroke', '#30363d');
-        gg.selectAll('.tick text').attr('fill', '#8b949e').attr('font-size', '0.75rem');
+        gg.selectAll('.tick text')
+          .attr('fill', '#8b949e')
+          .attr('font-size', '0.75rem')
+          .attr('text-anchor', 'end')
+          .attr('transform', 'rotate(-45)')
+          .attr('dx', '-0.5em')
+          .attr('dy', '0.25em');
       });
 
     // Y axis

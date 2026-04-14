@@ -230,9 +230,10 @@ router.get(
     const until = typeof req.query.until === 'string' ? req.query.until : undefined;
     const path = typeof req.query.path === 'string' ? req.query.path : undefined;
     const maxCommits = typeof req.query.maxCommits === 'string' ? parseInt(req.query.maxCommits, 10) : undefined;
+    const tzOffset = typeof req.query.tzOffset === 'string' ? parseInt(req.query.tzOffset, 10) : undefined;
     const stream = req.query.stream === '1';
 
-    const cacheKey = cacheService.cacheKey(['code-frequency', owner, repo, path ?? '', since ?? '', until ?? '', String(maxCommits ?? 100)]);
+    const cacheKey = cacheService.cacheKey(['code-frequency', owner, repo, path ?? '', since ?? '', until ?? '', String(maxCommits ?? 100), String(tzOffset ?? '')]);
     const cached = cacheService.get(cacheKey);
 
     // ── Non-streaming path (backwards compatible) ──────────────────────────
@@ -243,7 +244,7 @@ router.get(
       }
       try {
         const service = getGitHubService(req);
-        const data = await service.getCodeFrequency(owner, repo, { since, until, path, maxCommits });
+        const data = await service.getCodeFrequency(owner, repo, { since, until, path, maxCommits, tzOffset });
         cacheService.set(cacheKey, data, 300);
         res.json(data);
       } catch (err) {
@@ -282,7 +283,7 @@ router.get(
       const finalData = await service.getCodeFrequencyWithProgress(
         owner,
         repo,
-        { since, until, path, maxCommits },
+        { since, until, path, maxCommits, tzOffset },
         (progress) => {
           sendEvent({
             phase: progress.phase,

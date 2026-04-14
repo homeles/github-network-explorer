@@ -12,18 +12,36 @@ export const TIME_RANGE_LABELS: Record<TimeRange, string> = {
   custom: 'Custom',
 };
 
+/**
+ * Convert a local YYYY-MM-DD date to an ISO timestamp at local midnight,
+ * expressed with the correct UTC offset so the GitHub API filters correctly
+ * for the viewer's timezone.
+ */
+function localDateToISO(dateStr: string, endOfDay = false): string {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const local = endOfDay
+    ? new Date(y, m - 1, d, 23, 59, 59)
+    : new Date(y, m - 1, d, 0, 0, 0);
+  return local.toISOString();
+}
+
+/** Return the viewer's local date as YYYY-MM-DD. */
+function localToday(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
 export function getDateRange(range: TimeRange): { since?: string; until?: string } {
   if (range === 'all') return {};
   const now = new Date();
-  // Truncate to date only (no time) so the key stays stable within the same day
-  const untilDate = now.toISOString().slice(0, 10) + 'T23:59:59Z';
+  const untilDate = localToday();
   const since = new Date(now);
   if (range === '1m') since.setMonth(since.getMonth() - 1);
   else if (range === '3m') since.setMonth(since.getMonth() - 3);
   else if (range === '6m') since.setMonth(since.getMonth() - 6);
   else if (range === '1y') since.setFullYear(since.getFullYear() - 1);
-  const sinceDate = since.toISOString().slice(0, 10) + 'T00:00:00Z';
-  return { since: sinceDate, until: untilDate };
+  const sinceDate = `${since.getFullYear()}-${String(since.getMonth() + 1).padStart(2, '0')}-${String(since.getDate()).padStart(2, '0')}`;
+  return { since: localDateToISO(sinceDate), until: localDateToISO(untilDate, true) };
 }
 
 interface DateRangeContextValue {
@@ -55,8 +73,8 @@ export function DateRangeProvider({ children }: { children: ReactNode }) {
   const { since, until } = useMemo(() => {
     if (timeRange === 'custom') {
       return {
-        since: customSince ? customSince + 'T00:00:00Z' : undefined,
-        until: customUntil ? customUntil + 'T23:59:59Z' : undefined,
+        since: customSince ? localDateToISO(customSince) : undefined,
+        until: customUntil ? localDateToISO(customUntil, true) : undefined,
       };
     }
     return getDateRange(timeRange);
