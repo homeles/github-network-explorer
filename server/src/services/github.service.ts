@@ -432,17 +432,33 @@ export class GitHubService {
       return dateStr.slice(0, 10);
     }
 
+    // Determine the date range bounds (YYYY-MM-DD) for filtering bucketed days.
+    // GitHub's API filters by committer date, but we bucket by author date —
+    // so rebased/cherry-picked commits can fall outside the range.
+    const sinceDateBound = period.since ? getDay(period.since) : undefined;
+    const untilDateBound = period.until ? getDay(period.until) : undefined;
+
+    function inRange(day: string): boolean {
+      if (sinceDateBound && day < sinceDateBound) return false;
+      if (untilDateBound && day > untilDateBound) return false;
+      return true;
+    }
+
+    // Pre-filter commits to only those whose author date falls in range.
+    // This keeps all downstream aggregation (dirs, files, contributors) consistent.
+    const filteredCommitDetails = commitDetails.filter(c => inRange(getDay(c.date)));
+    const filteredAllCommits = (allCommits ?? commitDetails).filter(c => inRange(getDay(c.date)));
+
     // Build commit counts from ALL listed commits (not just successfully analyzed ones)
     const dayCommitCounts = new Map<string, number>();
-    const commitsSource = allCommits ?? commitDetails;
-    for (const c of commitsSource) {
+    for (const c of filteredAllCommits) {
       const day = getDay(c.date);
       dayCommitCounts.set(day, (dayCommitCounts.get(day) ?? 0) + 1);
     }
 
     // Build stats from analyzed commits (may be incomplete due to API failures)
     const dayMap = new Map<string, { additions: number; deletions: number; commitCount: number }>();
-    for (const c of commitDetails) {
+    for (const c of filteredCommitDetails) {
       const day = getDay(c.date);
       const entry = dayMap.get(day) ?? { additions: 0, deletions: 0, commitCount: 0 };
       entry.additions += c.additions;
@@ -475,7 +491,7 @@ export class GitHubService {
     }
 
     const root = makeDirNode('');
-    for (const c of commitDetails) {
+    for (const c of filteredCommitDetails) {
       const seenDirsThisCommit = new Set<string>();
       for (const f of c.files) {
         const parts = f.filename.split('/');
@@ -506,7 +522,7 @@ export class GitHubService {
     const directoryBreakdown = Array.from(root.children.values()).map(toDirectoryStats);
 
     const fileMap = new Map<string, { additions: number; deletions: number; changes: number; commitCount: number }>();
-    for (const c of commitDetails) {
+    for (const c of filteredCommitDetails) {
       for (const f of c.files) {
         const entry = fileMap.get(f.filename) ?? { additions: 0, deletions: 0, changes: 0, commitCount: 0 };
         entry.additions += f.additions; entry.deletions += f.deletions;
@@ -520,7 +536,7 @@ export class GitHubService {
       .slice(0, 50);
 
     const contribMap = new Map<string, { login: string | null; name: string | null; avatarUrl: string; additions: number; deletions: number; commitCount: number }>();
-    for (const c of commitDetails) {
+    for (const c of filteredCommitDetails) {
       const key = c.author.login ?? c.author.name ?? 'unknown';
       const entry = contribMap.get(key) ?? { login: c.author.login, name: c.author.name, avatarUrl: c.author.avatarUrl, additions: 0, deletions: 0, commitCount: 0 };
       entry.additions += c.additions; entry.deletions += c.deletions; entry.commitCount++;
@@ -529,10 +545,10 @@ export class GitHubService {
     const contributors = Array.from(contribMap.values())
       .sort((a, b) => (b.additions + b.deletions) - (a.additions + a.deletions));
 
-    const allDates = (allCommits ?? commitDetails).map((c) => c.date).filter(Boolean).sort();
+    const allDates = filteredAllCommits.map((c) => c.date).filter(Boolean).sort();
     return {
       timeSeries, directoryBreakdown, topFiles, contributors,
-      totalCommitsAnalyzed: (allCommits ?? commitDetails).length,
+      totalCommitsAnalyzed: filteredAllCommits.length,
       period: { since: period.since ?? allDates[0] ?? '', until: period.until ?? allDates[allDates.length - 1] ?? '' },
     };
   }
