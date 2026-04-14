@@ -34,13 +34,14 @@ export default function CodeFrequencyChart({ data }: Props) {
 
     const parsed = data.map((d) => ({
       ...d,
-      date: new Date(d.date + 'T00:00:00Z'),
+      // Parse as local midnight so d3.timeFormat shows the correct local date
+      date: new Date(d.date + 'T00:00:00'),
     }));
 
     const maxVal = d3.max(parsed, (d) => Math.max(d.additions, d.deletions)) ?? 1;
 
     const xScale = d3
-      .scaleUtc()
+      .scaleTime()
       .domain(d3.extent(parsed, (d) => d.date) as [Date, Date])
       .range([0, innerWidth]);
 
@@ -115,7 +116,7 @@ export default function CodeFrequencyChart({ data }: Props) {
       .call(
         d3.axisBottom(xScale)
           .ticks(Math.min(parsed.length, 12))
-          .tickFormat((d) => d3.utcFormat(tickFmt)(d as Date))
+          .tickFormat((d) => d3.timeFormat(tickFmt)(d as Date))
       )
       .call((gg) => {
         gg.select('.domain').attr('stroke', '#30363d');
@@ -185,7 +186,7 @@ export default function CodeFrequencyChart({ data }: Props) {
           .style('left', `${event.offsetX + 16}px`)
           .style('top', `${event.offsetY - 8}px`)
           .html(
-            `<div style="font-weight:600;margin-bottom:4px">${d3.utcFormat('%b %d, %Y')(d.date)}</div>` +
+            `<div style="font-weight:600;margin-bottom:4px">${d3.timeFormat('%b %d, %Y')(d.date)}</div>` +
             `<div style="color:#3fb950">+${d.additions.toLocaleString()} additions</div>` +
             `<div style="color:#f85149">-${d.deletions.toLocaleString()} deletions</div>` +
             `<div style="color:${net >= 0 ? '#3fb950' : '#f85149'}">net ${net >= 0 ? '+' : ''}${net.toLocaleString()}</div>` +
