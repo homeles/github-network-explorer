@@ -622,23 +622,31 @@ export class GitHubService {
     let lastReportAt = 0;
     let lastPartialAt = 0;
 
+    const fetchWithRetry = async (c: CommitBasic, retries = 2): Promise<CommitDetailItem> => {
+      try {
+        const detail = await this.octokit.request('GET /repos/{owner}/{repo}/commits/{ref}', { owner, repo, ref: c.sha });
+        return {
+          sha: c.sha, date: c.date, author: c.author, message: c.message,
+          additions: detail.data.stats?.additions ?? 0,
+          deletions: detail.data.stats?.deletions ?? 0,
+          files: (detail.data.files ?? []).map((f) => ({
+            filename: f.filename ?? '', additions: f.additions ?? 0,
+            deletions: f.deletions ?? 0, changes: f.changes ?? 0, status: f.status ?? 'modified',
+          })),
+        };
+      } catch (err) {
+        if (retries > 0) {
+          await new Promise(r => setTimeout(r, 1000));
+          return fetchWithRetry(c, retries - 1);
+        }
+        throw err;
+      }
+    };
+
     for (let i = 0; i < allCommitShas.length; i += BATCH) {
       if (signal?.aborted) break;
       const batch = allCommitShas.slice(i, i + BATCH);
-      const results = await Promise.allSettled(
-        batch.map(async (c) => {
-          const detail = await this.octokit.request('GET /repos/{owner}/{repo}/commits/{ref}', { owner, repo, ref: c.sha });
-          return {
-            sha: c.sha, date: c.date, author: c.author, message: c.message,
-            additions: detail.data.stats?.additions ?? 0,
-            deletions: detail.data.stats?.deletions ?? 0,
-            files: (detail.data.files ?? []).map((f) => ({
-              filename: f.filename ?? '', additions: f.additions ?? 0,
-              deletions: f.deletions ?? 0, changes: f.changes ?? 0, status: f.status ?? 'modified',
-            })),
-          };
-        })
-      );
+      const results = await Promise.allSettled(batch.map(c => fetchWithRetry(c)));
       for (const r of results) {
         if (r.status === 'fulfilled') commitDetails.push(r.value);
       }
@@ -658,6 +666,12 @@ export class GitHubService {
     }
 
     return this.buildCodeFrequencyData(commitDetails, options, allCommitShas, options.tzOffset);
+  }
+
+  async getRateLimit(): Promise<{ limit: number; remaining: number; used: number; reset: number }> {
+    const resp = await this.octokit.request('GET /rate_limit');
+    const core = resp.data.rate;
+    return { limit: core.limit, remaining: core.remaining, used: core.used, reset: core.reset };
   }
 
   async getUserRepos(): Promise<UserRepo[]> {

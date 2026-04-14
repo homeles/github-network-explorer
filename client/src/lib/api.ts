@@ -4,6 +4,13 @@ export interface ApiError {
   error: string;
 }
 
+export interface RateLimitInfo {
+  limit: number;
+  remaining: number;
+  used: number;
+  reset: number; // Unix timestamp when the rate limit resets
+}
+
 export interface GitActor {
   name: string | null;
   email: string | null;
@@ -214,6 +221,7 @@ async function apiFetch<T>(url: string, options?: RequestInit): Promise<T> {
 }
 
 export const api = {
+  rateLimit: () => apiFetch<RateLimitInfo>('/api/rate-limit'),
   auth: {
     status: () => apiFetch<AuthStatus>('/api/auth/status'),
     initiateLogin: () =>

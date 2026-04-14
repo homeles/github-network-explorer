@@ -6,6 +6,8 @@ import path from 'path';
 import { authRouter } from './routes/auth.routes.js';
 import { repoRouter } from './routes/repo.routes.js';
 import { orgRouter } from './routes/org.routes.js';
+import { requireAuth } from './middleware/auth.middleware.js';
+import { GitHubService } from './services/github.service.js';
 
 const app = express();
 const PORT = parseInt(process.env.PORT ?? '3001', 10);
@@ -50,6 +52,18 @@ app.use(
 app.use('/api/auth', authRouter);
 app.use('/api/repos', repoRouter);
 app.use('/api/orgs', orgRouter);
+
+// GET /api/rate-limit — returns GitHub API rate limit (no cache)
+app.get('/api/rate-limit', requireAuth, async (req, res): Promise<void> => {
+  try {
+    const service = new GitHubService(req.session.accessToken!);
+    const data = await service.getRateLimit();
+    res.json(data);
+  } catch (err) {
+    console.error('Get rate limit error:', err);
+    res.status(500).json({ error: 'Failed to fetch rate limit' });
+  }
+});
 
 // Health check
 app.get('/health', (_req, res) => {

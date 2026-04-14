@@ -6,6 +6,7 @@ import { useOrgs, useOrgRepos } from '../hooks/useRepos.js';
 import { api } from '../lib/api.js';
 import type { UserRepo, UserOrg } from '../lib/api.js';
 import { DateRangeProvider } from '../contexts/DateRangeContext.js';
+import { RateLimitIndicator } from '../components/RateLimitIndicator.js';
 
 export default function AppLayout() {
   const { isAuthenticated, user, isLoading } = useAuth();
@@ -454,6 +455,9 @@ export default function AppLayout() {
 
         {/* Spacer */}
         <div style={{ flexGrow: 1 }} />
+
+        {/* Rate limit indicator */}
+        <RateLimitIndicator />
 
         {/* User info + logout */}
         {user && (
