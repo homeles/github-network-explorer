@@ -579,12 +579,6 @@ export class GitHubService {
     const pathFilter = options.path;
 
     // 1. List commits (paginated)
-    // NOTE: We only pass `since` to the GitHub API, not `until`.
-    // GitHub's List Commits endpoint traverses the commit graph differently
-    // depending on the `until` boundary, which causes the same date to return
-    // different commits (and different stats) when the range changes.
-    // By omitting `until` from the API call and filtering afterward in
-    // buildCodeFrequencyData, we ensure consistent results for any given date.
     type CommitBasic = { sha: string; date: string; author: { login: string | null; avatarUrl: string; name: string | null }; message: string };
     const allCommitShas: CommitBasic[] = [];
 
@@ -592,9 +586,10 @@ export class GitHubService {
     while (maxCommits === Infinity || allCommitShas.length < maxCommits) {
       if (signal?.aborted) break;
       const perPage = maxCommits === Infinity ? 100 : Math.min(100, maxCommits - allCommitShas.length);
-      const params: { owner: string; repo: string; per_page: number; page: number; since?: string; path?: string } =
+      const params: { owner: string; repo: string; per_page: number; page: number; since?: string; until?: string; path?: string } =
         { owner, repo, per_page: perPage, page };
       if (since) params.since = since;
+      if (until) params.until = until;
       if (pathFilter) params.path = pathFilter;
 
       const resp = await this.octokit.request('GET /repos/{owner}/{repo}/commits', params);
@@ -627,16 +622,9 @@ export class GitHubService {
     let lastReportAt = 0;
     let lastPartialAt = 0;
 
-    let failedDetailFetches = 0;
-    let nullStatCommits = 0;
-
     const fetchWithRetry = async (c: CommitBasic, retries = 2): Promise<CommitDetailItem> => {
       try {
         const detail = await this.octokit.request('GET /repos/{owner}/{repo}/commits/{ref}', { owner, repo, ref: c.sha });
-        if (!detail.data.stats) {
-          nullStatCommits++;
-          console.warn(`[code-frequency] Commit ${c.sha.slice(0, 8)} returned null stats (date: ${c.date})`);
-        }
         return {
           sha: c.sha, date: c.date, author: c.author, message: c.message,
           additions: detail.data.stats?.additions ?? 0,
@@ -651,8 +639,6 @@ export class GitHubService {
           await new Promise(r => setTimeout(r, 1000));
           return fetchWithRetry(c, retries - 1);
         }
-        failedDetailFetches++;
-        console.error(`[code-frequency] Failed to fetch details for ${c.sha.slice(0, 8)} after 3 attempts (date: ${c.date}):`, (err as Error).message);
         // On final failure, return the commit with zero stats so it's still counted
         return {
           sha: c.sha, date: c.date, author: c.author, message: c.message,
@@ -684,7 +670,6 @@ export class GitHubService {
       }
     }
 
-    console.log(`[code-frequency] ${owner}/${repo}: listed ${allCommitShas.length} commits, analyzed ${commitDetails.length} details (${failedDetailFetches} failed, ${nullStatCommits} null stats)`);
     return this.buildCodeFrequencyData(commitDetails, options, allCommitShas, options.tzOffset);
   }
 
