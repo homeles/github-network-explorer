@@ -1,5 +1,6 @@
 // Network DAG layout: horizontal timeline with branch lanes
 // GitHub-style: each branch gets its own Y-row, commits on X-axis by time
+// Reconstructs deleted feature branches from merge commit topology + PR data
 
 import type { CommitNode } from './github-api.js';
 
@@ -57,6 +58,12 @@ export function getLaneColor(lane: number): string {
   return LANE_COLORS[lane % LANE_COLORS.length] ?? '#58a6ff';
 }
 
+/**
+ * Build the "first-parent spine" of the default branch.
+ * This is the linear history following only first parents,
+ * which represents main's own commits (not feature branch commits
+ * that were merged in).
+ */
 function buildFirstParentSpine(
   commits: CommitNode[],
   branchMap: Map<string, string[]>,
@@ -65,6 +72,7 @@ function buildFirstParentSpine(
   const commitByOid = new Map<string, CommitNode>();
   for (const c of commits) commitByOid.set(c.oid, c);
 
+  // Find the newest commit on the default branch (branch tip)
   const defaultCommits = commits
     .filter((c) => (branchMap.get(c.oid) ?? []).includes(defaultBranch))
     .sort((a, b) => new Date(b.committedDate).getTime() - new Date(a.committedDate).getTime());
@@ -76,6 +84,7 @@ function buildFirstParentSpine(
 
   while (current) {
     spine.add(current.oid);
+    // Follow first parent only
     const firstParentOid: string | undefined = current.parents.nodes[0]?.oid;
     current = firstParentOid ? commitByOid.get(firstParentOid) : undefined;
   }
@@ -83,6 +92,15 @@ function buildFirstParentSpine(
   return spine;
 }
 
+/**
+ * Reconstruct deleted feature branches from merge commits.
+ *
+ * For each merge commit on main's first-parent spine:
+ *   - The second parent points to the tip of the merged feature branch
+ *   - Walk backward from that tip, collecting commits until we hit
+ *     a commit that's on the first-parent spine (the fork point)
+ *   - Those intermediate commits form the virtual branch
+ */
 function reconstructDeletedBranches(
   commits: CommitNode[],
   branchMap: Map<string, string[]>,
@@ -99,20 +117,24 @@ function reconstructDeletedBranches(
   const virtualBranchNames = new Set<string>();
   const processedParents = new Set<string>();
 
+  // All live branch names (to avoid conflicts)
   const liveBranches = new Set<string>();
   for (const branches of branchMap.values()) {
     for (const b of branches) liveBranches.add(b);
   }
 
+  // Find merge commits on the spine
   for (const oid of spine) {
     const commit = commitByOid.get(oid);
     if (!commit || commit.parents.nodes.length < 2) continue;
 
+    // Process each non-first parent (merged branches)
     for (let p = 1; p < commit.parents.nodes.length; p++) {
       const tipOid = commit.parents.nodes[p]!.oid;
       if (processedParents.has(tipOid)) continue;
       processedParents.add(tipOid);
 
+      // Get branch name from PR data
       const prs = commit.associatedPullRequests?.nodes ?? [];
       const mergedPr = prs.find(
         (pr) => pr.state === 'MERGED' && pr.mergeCommit?.oid === commit.oid
@@ -120,6 +142,7 @@ function reconstructDeletedBranches(
       const branchName = mergedPr?.headRefName ?? `merged-into-${commit.abbreviatedOid}`;
       if (liveBranches.has(branchName)) continue;
 
+      // Walk backward from tip, collecting commits until we hit the spine
       const branchCommitsList: CommitNode[] = [];
       const visited = new Set<string>();
       const queue = [tipOid];
@@ -131,10 +154,14 @@ function reconstructDeletedBranches(
 
         const c = commitByOid.get(cOid);
         if (!c) continue;
+
+        // If this commit is on the spine, it's the fork point — DON'T add it
+        // to the virtual branch commits (it stays on main), but stop walking
         if (spine.has(cOid)) continue;
 
         branchCommitsList.push(c);
 
+        // Continue walking parents
         for (const parent of c.parents.nodes) {
           if (!visited.has(parent.oid)) {
             queue.push(parent.oid);
@@ -170,9 +197,11 @@ export function buildNetworkLayout(
 
   const db = defaultBranch ?? 'main';
 
+  // Reconstruct deleted branches
   const { virtualBranchCommits, virtualBranchNames } =
     reconstructDeletedBranches(commits, branchMap, db);
 
+  // 1. Determine visible branches
   const liveBranchSet = new Set<string>();
   for (const branches of branchMap.values()) {
     for (const b of branches) liveBranchSet.add(b);
@@ -185,31 +214,42 @@ export function buildNetworkLayout(
     visibleLive = [...liveBranchSet];
   }
 
+  // Sort live: default first, then alphabetical
   visibleLive.sort((a, b) => {
     if (a === db) return -1;
     if (b === db) return 1;
     return a.localeCompare(b);
   });
 
+  // Sort virtual alphabetically
   const visibleVirtual = [...virtualBranchNames].sort();
+
+  // Combined: live branches first, then virtual
   const allBranches = [...visibleLive, ...visibleVirtual];
+
   const branchIndex = new Map<string, number>();
   allBranches.forEach((name, i) => branchIndex.set(name, i));
 
+  // 2. Build first-parent spine for default branch display
   const spine = buildFirstParentSpine(commits, branchMap, db);
 
+  // 3. Collect display commits per branch
   const branchDisplayCommits = new Map<string, CommitNode[]>();
 
+  // Default branch: show spine commits only (first-parent history)
   const spineCommits = commits
     .filter((c) => spine.has(c.oid))
     .sort((a, b) => new Date(a.committedDate).getTime() - new Date(b.committedDate).getTime());
   branchDisplayCommits.set(db, spineCommits);
 
+  // Collect all OIDs that belong to virtual branches (to exclude from live branches)
   const virtualBranchOids = new Set<string>();
   for (const [, vCommits] of virtualBranchCommits) {
     for (const c of vCommits) virtualBranchOids.add(c.oid);
   }
 
+  // Live non-default branches: show unique commits + fork point
+  // Exclude commits that belong to virtual branches
   for (const branch of visibleLive) {
     if (branch === db) continue;
     const bCommits = commits
@@ -220,6 +260,7 @@ export function buildNetworkLayout(
     let forkCommit: CommitNode | null = null;
 
     for (const c of bCommits) {
+      // Skip commits that belong to a virtual (deleted) feature branch
       if (virtualBranchOids.has(c.oid)) continue;
       if (!spine.has(c.oid)) {
         uniqueCommits.push(c);
@@ -229,8 +270,12 @@ export function buildNetworkLayout(
     }
 
     const display: CommitNode[] = [];
+    // Only include fork point if the branch has unique commits
+    // and the fork point is actually adjacent to the first unique commit
     if (forkCommit && uniqueCommits.length > 0) {
       const firstUnique = uniqueCommits[0]!;
+      // Check if forkCommit is the FIRST parent of the first unique commit
+      // (not second parent — that would be a cross-branch merge, not a fork)
       const isFirstParent = firstUnique.parents.nodes[0]?.oid === forkCommit.oid;
       if (isFirstParent) {
         display.push(forkCommit);
@@ -242,20 +287,22 @@ export function buildNetworkLayout(
       display.push(bCommits[0]!);
     }
 
-    const seenOids = new Set<string>();
+    const seen = new Set<string>();
     const deduped = display.filter((c) => {
-      if (seenOids.has(c.oid)) return false;
-      seenOids.add(c.oid);
+      if (seen.has(c.oid)) return false;
+      seen.add(c.oid);
       return true;
     });
     deduped.sort((a, b) => new Date(a.committedDate).getTime() - new Date(b.committedDate).getTime());
     branchDisplayCommits.set(branch, deduped);
   }
 
+  // Virtual branches: show all their reconstructed commits
   for (const [branch, vCommits] of virtualBranchCommits) {
     branchDisplayCommits.set(branch, vCommits);
   }
 
+  // 4. Global X positions
   const allSorted = [...commits].sort(
     (a, b) => new Date(a.committedDate).getTime() - new Date(b.committedDate).getTime()
   );
@@ -272,6 +319,7 @@ export function buildNetworkLayout(
   const totalWidth = maxX + NODE_PADDING_RIGHT;
   const totalHeight = LANE_PADDING_TOP + allBranches.length * LANE_HEIGHT + 16;
 
+  // 5. Build nodes
   const nodes: NetworkNode[] = [];
   const nodeByKey = new Map<string, NetworkNode>();
 
@@ -305,8 +353,10 @@ export function buildNetworkLayout(
     }
   }
 
+  // 6. Build edges
   const edges: NetworkEdge[] = [];
   const edgeSet = new Set<string>();
+  // Track node pairs that have cross-lane edges (regardless of prefix)
   const crossLanePairs = new Set<string>();
 
   function addEdge(key: string, edge: NetworkEdge) {
@@ -323,6 +373,7 @@ export function buildNetworkLayout(
     return crossLanePairs.has(`${nodeKeyA}<>${nodeKeyB}`);
   }
 
+  // 6a. Within-branch edges: connect consecutive commits
   for (const branch of allBranches) {
     const lane = branchIndex.get(branch)!;
     const displayCommits = branchDisplayCommits.get(branch) ?? [];
@@ -354,6 +405,7 @@ export function buildNetworkLayout(
     }
   }
 
+  // 6b. Cross-lane connectors for live non-default branches
   for (const branch of visibleLive) {
     if (branch === db) continue;
     const lane = branchIndex.get(branch)!;
@@ -393,6 +445,7 @@ export function buildNetworkLayout(
     }
   }
 
+  // 6c. Cross-lane connectors for virtual branches
   for (const branch of visibleVirtual) {
     const lane = branchIndex.get(branch)!;
     const displayCommits = branchDisplayCommits.get(branch) ?? [];
@@ -447,17 +500,27 @@ export function buildNetworkLayout(
     }
   }
 
+  // 6d. Generic cross-branch merge connectors
+  //     For merge commits on LIVE branches: connect non-first parents across lanes.
+  //     For merge commits on VIRTUAL branches: only connect non-first parents
+  //     that are on the SPINE (sync merges from main into feature branch).
   const processedMergeOids = new Set<string>();
   for (const node of nodes) {
     if (!node.isMerge) continue;
     if (processedMergeOids.has(node.oid)) continue;
     processedMergeOids.add(node.oid);
 
+    // Only process non-first parents (the merged-in branches)
     for (let p = 1; p < node.parents.nodes.length; p++) {
       const parentOid = node.parents.nodes[p]!.oid;
 
+      // For virtual branches: only draw cross-lane edges to spine commits
+      // (sync merges from main into feature). Skip non-spine parents to
+      // avoid duplicate arrows (6c already handles fork/merge-back to spine).
       if (node.isVirtualBranch && !spine.has(parentOid)) continue;
 
+      // Find the best branch to connect to for this parent:
+      // Priority: same virtual branch > other virtual branch > live non-default > default
       let bestParentNode: NetworkNode | null = null;
       let bestPriority = -1;
 
@@ -479,6 +542,8 @@ export function buildNetworkLayout(
       }
 
       if (bestParentNode) {
+        // Skip if any cross-lane edge already connects these two nodes
+        // (sections 6b/6c may have already created one with a different key prefix)
         if (!hasCrossLanePair(bestParentNode.nodeKey, node.nodeKey)) {
           const edgeKey = `xmerge:${bestParentNode.nodeKey}->${node.nodeKey}`;
           if (!edgeSet.has(edgeKey)) {

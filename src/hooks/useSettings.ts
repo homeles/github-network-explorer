@@ -10,7 +10,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   showMergeCommits: true,
 };
 
-const STORAGE_KEY = 'gne-demo-settings';
+const STORAGE_KEY = 'gne-settings';
 
 function loadSettings(): AppSettings {
   try {

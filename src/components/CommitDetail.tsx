@@ -110,7 +110,13 @@ export default function CommitDetail({ commit, onClose, owner, repo, branches }:
         }}
       >
         <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.5rem',
+            }}
+          >
             <span
               style={{
                 fontFamily: 'monospace',
@@ -228,7 +234,13 @@ export default function CommitDetail({ commit, onClose, owner, repo, branches }:
               />
             )}
             <div>
-              <div style={{ color: '#dfe2eb', fontSize: '0.875rem', fontWeight: 600 }}>
+              <div
+                style={{
+                  color: '#dfe2eb',
+                  fontSize: '0.875rem',
+                  fontWeight: 600,
+                }}
+              >
                 {commit.author?.user?.login ?? commit.author?.name ?? 'Unknown'}
               </div>
               {commit.author?.email && (
@@ -294,7 +306,13 @@ export default function CommitDetail({ commit, onClose, owner, repo, branches }:
           >
             Changes
           </div>
-          <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+          <div
+            style={{
+              display: 'flex',
+              gap: '0.75rem',
+              flexWrap: 'wrap',
+            }}
+          >
             {commit.changedFilesIfAvailable !== null &&
               commit.changedFilesIfAvailable !== undefined && (
                 <span
@@ -417,7 +435,13 @@ export default function CommitDetail({ commit, onClose, owner, repo, branches }:
                     >
                       {pr.title}
                     </div>
-                    <div style={{ color: '#8b949e', fontSize: '0.75rem', fontFamily: 'monospace' }}>
+                    <div
+                      style={{
+                        color: '#8b949e',
+                        fontSize: '0.75rem',
+                        fontFamily: 'monospace',
+                      }}
+                    >
                       #{pr.number}
                     </div>
                   </div>

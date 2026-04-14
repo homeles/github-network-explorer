@@ -26,6 +26,7 @@ export default function BranchSelector({ branches, selected, onChange, disabled 
 
   function toggleAll() {
     if (allSelected) {
+      // Keep at least one selected — fall back to the first branch
       onChange(branches.slice(0, 1));
     } else {
       onChange([...branches]);
@@ -34,6 +35,7 @@ export default function BranchSelector({ branches, selected, onChange, disabled 
 
   function toggleBranch(name: string) {
     if (selected.includes(name)) {
+      // Don't allow deselecting the last branch
       if (selected.length === 1) return;
       onChange(selected.filter((b) => b !== name));
     } else {
@@ -92,6 +94,7 @@ export default function BranchSelector({ branches, selected, onChange, disabled 
             boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
           }}
         >
+          {/* All branches toggle */}
           <label
             style={{
               display: 'flex',
@@ -114,6 +117,7 @@ export default function BranchSelector({ branches, selected, onChange, disabled 
             <span style={{ fontWeight: 500 }}>All branches</span>
           </label>
 
+          {/* Individual branches */}
           {branches.map((name) => {
             const isOnlySelected = selected.length === 1 && selected[0] === name;
             return (

@@ -60,9 +60,11 @@ export default function NetworkGraphVisualization({
     [commits, branchMap, defaultBranch, selectedBranches]
   );
 
+  // Sync branch label vertical scroll with the zoom transform
   useEffect(() => {
     const labelDiv = branchLabelRef.current;
     if (!labelDiv) return;
+    // Apply vertical translation from zoom
     const ty = zoomTransformRef.current.y;
     const scale = zoomTransformRef.current.k;
     labelDiv.style.transform = `translateY(${ty}px) scaleY(${scale})`;
@@ -98,6 +100,7 @@ export default function NetworkGraphVisualization({
       .on('zoom', (event: d3.D3ZoomEvent<SVGSVGElement, unknown>) => {
         zoomTransformRef.current = event.transform;
         g.attr('transform', String(event.transform));
+        // Sync branch labels vertical position
         if (labelDiv) {
           labelDiv.style.transform = `translateY(${event.transform.y}px) scaleY(${event.transform.k})`;
           labelDiv.style.transformOrigin = 'top left';
@@ -107,12 +110,14 @@ export default function NetworkGraphVisualization({
     zoomBehaviorRef.current = zoom;
     d3svg.call(zoom);
 
+    // Draw branch lane backgrounds
     const lanesGroup = g.append('g').attr('class', 'lanes');
     for (let i = 0; i < layout.branches.length; i++) {
       const laneY = LANE_PADDING_TOP + i * LANE_HEIGHT;
       const color = getLaneColor(i);
       const isVirtual = layout.virtualBranches.has(layout.branches[i]!);
 
+      // Lane background stripe (alternating subtle)
       if (i % 2 === 1) {
         lanesGroup
           .append('rect')
@@ -123,6 +128,7 @@ export default function NetworkGraphVisualization({
           .attr('fill', 'rgba(255,255,255,0.02)');
       }
 
+      // Lane line
       const line = lanesGroup
         .append('line')
         .attr('x1', -10000)
@@ -138,8 +144,10 @@ export default function NetworkGraphVisualization({
       }
     }
 
+    // Draw edges
     const edgeGroup = g.append('g').attr('class', 'edges');
 
+    // Define arrowhead markers for cross-lane edges
     const defs = d3svg.append('defs');
     for (let i = 0; i < LANE_COLORS.length; i++) {
       const color = getLaneColor(i);
@@ -167,6 +175,7 @@ export default function NetworkGraphVisualization({
       if (!isCrossLane) {
         d = `M ${x1} ${y1} L ${x2} ${y2}`;
       } else {
+        // Cross-lane: smooth S-curve
         const dx = Math.abs(x2 - x1);
         const curveOffset = Math.min(dx * 0.4, 30);
         d = `M ${x1} ${y1} C ${x1 + curveOffset} ${y1}, ${x2 - curveOffset} ${y2}, ${x2} ${y2}`;
@@ -185,6 +194,7 @@ export default function NetworkGraphVisualization({
       }
     }
 
+    // Draw nodes
     const nodeGroup = g.append('g').attr('class', 'nodes');
 
     for (const node of layout.nodes) {
@@ -198,6 +208,7 @@ export default function NetworkGraphVisualization({
         .attr('cursor', 'pointer')
         .on('click', () => onSelectCommit(node.oid));
 
+      // Selected ring
       if (isSelected) {
         nodeG
           .append('circle')
@@ -232,6 +243,7 @@ export default function NetworkGraphVisualization({
           .attr('stroke-width', 2);
       }
 
+      // Tooltip
       nodeG
         .on('mouseover', function (event: MouseEvent) {
           d3.select(this).selectAll('circle, polygon').attr('fill', color);
@@ -262,6 +274,11 @@ export default function NetworkGraphVisualization({
               <span>${formatFullDate(node.committedDate)}</span>
             </div>
             <div style="font-size:11px;color:#c0c7d4">${authorLine}</div>
+            <div style="font-size:11px;color:#8b949e;margin-top:2px">
+              <span style="color:#3fb950">+${node.additions}</span>
+              <span style="margin-left:6px;color:#f85149">−${node.deletions}</span>
+              ${node.isMerge ? '<span style="margin-left:6px;color:#bc8cff">merge</span>' : ''}
+            </div>
             ${branchesHtml}
           `;
           tooltip.style.opacity = '1';
@@ -282,6 +299,7 @@ export default function NetworkGraphVisualization({
         });
     }
 
+    // Zoom: restore or fit
     if (!commitsChanged && hasInitialFitRef.current) {
       zoom.transform(d3svg, zoomTransformRef.current);
     } else {
@@ -299,6 +317,7 @@ export default function NetworkGraphVisualization({
     }
   }, [layout, selectedOid, onSelectCommit, commitFingerprint, branchMap]);
 
+  // Resize handler
   useEffect(() => {
     const container = containerRef.current;
     const svg = svgRef.current;
@@ -362,7 +381,9 @@ export default function NetworkGraphVisualization({
       >
         <div
           ref={branchLabelRef}
-          style={{ transformOrigin: 'top left' }}
+          style={{
+            transformOrigin: 'top left',
+          }}
         >
           {layout.branches.map((name, i) => {
             const color = getLaneColor(i);
