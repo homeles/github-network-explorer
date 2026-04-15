@@ -78,7 +78,15 @@ export default function AppLayout() {
     setSearchQuery('');
     const suffixes = ['/network', '/pulls', '/branches', '/settings', '/code-frequency'];
     const currentSuffix = suffixes.find((s) => location.pathname.endsWith(s)) ?? '';
-    void navigate(`/app/repo/${repo.owner.login}/${repo.name}${currentSuffix}`);
+    // Preserve date-range params when switching repos; drop repo-specific params (branches, etc.)
+    const currentParams = new URLSearchParams(location.search);
+    const newParams = new URLSearchParams();
+    for (const key of ['range', 'since', 'until']) {
+      const val = currentParams.get(key);
+      if (val) newParams.set(key, val);
+    }
+    const qs = newParams.toString() ? `?${newParams.toString()}` : '';
+    void navigate(`/app/repo/${repo.owner.login}/${repo.name}${currentSuffix}${qs}`);
   }
 
   const isPersonal = selectedOwner === null || selectedOwner === user?.login;
@@ -564,7 +572,7 @@ export default function AppLayout() {
               label: 'Commit Graph',
               active: isOnGraphPage,
               href: currentRepo
-                ? `/app/repo/${currentRepo.owner.login}/${currentRepo.name}`
+                ? `/app/repo/${currentRepo.owner.login}/${currentRepo.name}${location.search}`
                 : '/app',
             },
             {
@@ -572,7 +580,7 @@ export default function AppLayout() {
               label: 'Network Graph',
               active: isOnNetworkPage,
               href: currentRepo
-                ? `/app/repo/${currentRepo.owner.login}/${currentRepo.name}/network`
+                ? `/app/repo/${currentRepo.owner.login}/${currentRepo.name}/network${location.search}`
                 : '/app',
             },
             {
@@ -580,7 +588,7 @@ export default function AppLayout() {
               label: 'Pull Requests',
               active: isOnPullsPage,
               href: currentRepo
-                ? `/app/repo/${currentRepo.owner.login}/${currentRepo.name}/pulls`
+                ? `/app/repo/${currentRepo.owner.login}/${currentRepo.name}/pulls${location.search}`
                 : '/app',
             },
             {
@@ -588,7 +596,7 @@ export default function AppLayout() {
               label: 'Branches',
               active: isOnBranchesPage,
               href: currentRepo
-                ? `/app/repo/${currentRepo.owner.login}/${currentRepo.name}/branches`
+                ? `/app/repo/${currentRepo.owner.login}/${currentRepo.name}/branches${location.search}`
                 : '/app',
             },
             {
@@ -596,7 +604,7 @@ export default function AppLayout() {
               label: 'Code Frequency',
               active: isOnCodeFrequencyPage,
               href: currentRepo
-                ? `/app/repo/${currentRepo.owner.login}/${currentRepo.name}/code-frequency`
+                ? `/app/repo/${currentRepo.owner.login}/${currentRepo.name}/code-frequency${location.search}`
                 : '/app',
             },
             {
@@ -604,7 +612,7 @@ export default function AppLayout() {
               label: 'Settings',
               active: isOnSettingsPage,
               href: currentRepo
-                ? `/app/repo/${currentRepo.owner.login}/${currentRepo.name}/settings`
+                ? `/app/repo/${currentRepo.owner.login}/${currentRepo.name}/settings${location.search}`
                 : '/app',
             },
           ].map((item) => (

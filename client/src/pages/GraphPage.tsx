@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useParams } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import { useMultiBranchCommits, useCommitDetail } from '../hooks/useCommits.js';
+import { useUpdateSearchParams, useDateRangeParams } from '../hooks/useUrlParams.js';
 import { api } from '../lib/api.js';
 import GraphVisualization from '../components/GraphVisualization.js';
 import CommitDetail from '../components/CommitDetail.js';
@@ -11,8 +12,16 @@ import DateRangePicker from '../components/DateRangePicker.js';
 
 export default function GraphPage() {
   const { owner, repo } = useParams<{ owner: string; repo: string }>();
-  const [selectedBranches, setSelectedBranches] = useState<string[]>([]);
+  const [selectedBranches, setSelectedBranches] = useState<string[]>(() => {
+    const params = new URLSearchParams(window.location.search);
+    const param = params.get('branches');
+    if (!param) return [];
+    return param.split(',').map(decodeURIComponent).filter(Boolean);
+  });
   const [selectedOid, setSelectedOid] = useState<string | null>(null);
+
+  const { updateParams } = useUpdateSearchParams();
+  useDateRangeParams();
 
   const { since, until } = useDateRange();
 
@@ -24,11 +33,12 @@ export default function GraphPage() {
 
   const defaultBranch = overview?.defaultBranchRef?.name ?? 'main';
 
-  // Reset branches + selection when repo changes
+  // Reset branches + selection when repo changes; clear URL branches param
   useEffect(() => {
     setSelectedBranches([]);
     setSelectedOid(null);
-  }, [owner, repo]);
+    updateParams({ branches: null });
+  }, [owner, repo]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Once overview loads, seed selectedBranches with just the default branch
   useEffect(() => {
@@ -119,6 +129,10 @@ export default function GraphPage() {
             onChange={(next) => {
               setSelectedBranches(next);
               setSelectedOid(null);
+              const isDefaultOnly = next.length === 1 && next[0] === defaultBranch;
+              updateParams({
+                branches: (isDefaultOnly || next.length === 0) ? null : next.map(encodeURIComponent).join(','),
+              });
             }}
             disabled={overviewLoading}
           />

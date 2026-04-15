@@ -7,6 +7,7 @@ import TopFilesTable from '../components/TopFilesTable.js';
 import ContributorsChart from '../components/ContributorsChart.js';
 import { useDateRange } from '../contexts/DateRangeContext.js';
 import DateRangePicker from '../components/DateRangePicker.js';
+import { useUpdateSearchParams, useDateRangeParams } from '../hooks/useUrlParams.js';
 
 type Tab = 'timeseries' | 'treemap' | 'topfiles' | 'contributors';
 
@@ -20,9 +21,26 @@ interface StreamState {
 
 export default function CodeFrequencyPage() {
   const { owner, repo } = useParams<{ owner: string; repo: string }>();
-  const [tab, setTab] = useState<Tab>('timeseries');
-  const [pathFilter, setPathFilter] = useState('');
+  const [tab, setTab] = useState<Tab>(() => {
+    const t = new URLSearchParams(window.location.search).get('tab');
+    if (t === 'timeseries' || t === 'treemap' || t === 'topfiles' || t === 'contributors') return t;
+    return 'timeseries';
+  });
+  const [pathFilter, setPathFilter] = useState(
+    () => new URLSearchParams(window.location.search).get('path') ?? '',
+  );
   const [loadKey, setLoadKey] = useState(0);
+
+  const { updateParams } = useUpdateSearchParams();
+  useDateRangeParams();
+
+  // Sync tab/path to URL
+  useEffect(() => {
+    updateParams({
+      tab: tab === 'timeseries' ? null : tab,
+      path: pathFilter || null,
+    });
+  }, [tab, pathFilter]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const { since, until } = useDateRange();
 

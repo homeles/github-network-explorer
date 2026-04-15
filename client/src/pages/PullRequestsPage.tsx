@@ -1,10 +1,11 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useParams } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../lib/api.js';
 import type { PullRequest } from '../lib/api.js';
 import { useDateRange } from '../contexts/DateRangeContext.js';
 import DateRangePicker from '../components/DateRangePicker.js';
+import { useUpdateSearchParams, useDateRangeParams } from '../hooks/useUrlParams.js';
 
 type PRState = 'ALL' | 'OPEN' | 'CLOSED' | 'MERGED';
 type SortMode = 'newest' | 'oldest' | 'most-comments' | 'most-reviews';
@@ -544,10 +545,36 @@ function PRRow({ pr }: { pr: PullRequest }) {
 
 export default function PullRequestsPage() {
   const { owner, repo } = useParams<{ owner: string; repo: string }>();
-  const [activeState, setActiveState] = useState<PRState>('OPEN');
-  const [sortMode, setSortMode] = useState<SortMode>('newest');
-  const [authorFilter, setAuthorFilter] = useState('');
-  const [reviewerFilter, setReviewerFilter] = useState('');
+
+  const [activeState, setActiveState] = useState<PRState>(() => {
+    const s = new URLSearchParams(window.location.search).get('state');
+    if (s === 'ALL' || s === 'OPEN' || s === 'CLOSED' || s === 'MERGED') return s;
+    return 'OPEN';
+  });
+  const [sortMode, setSortMode] = useState<SortMode>(() => {
+    const s = new URLSearchParams(window.location.search).get('sort');
+    if (s === 'newest' || s === 'oldest' || s === 'most-comments' || s === 'most-reviews') return s;
+    return 'newest';
+  });
+  const [authorFilter, setAuthorFilter] = useState(
+    () => new URLSearchParams(window.location.search).get('author') ?? '',
+  );
+  const [reviewerFilter, setReviewerFilter] = useState(
+    () => new URLSearchParams(window.location.search).get('reviewer') ?? '',
+  );
+
+  const { updateParams } = useUpdateSearchParams();
+  useDateRangeParams();
+
+  // Sync state/sort/author/reviewer to URL on change
+  useEffect(() => {
+    updateParams({
+      state: activeState === 'OPEN' ? null : activeState,
+      sort: sortMode === 'newest' ? null : sortMode,
+      author: authorFilter || null,
+      reviewer: reviewerFilter || null,
+    });
+  }, [activeState, sortMode, authorFilter, reviewerFilter]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const { since, until } = useDateRange();
 
