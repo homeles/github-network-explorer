@@ -15,7 +15,11 @@ export default function AppLayout() {
   const params = useParams();
   const location = useLocation();
 
-  const [selectedOwner, setSelectedOwner] = useState<string | null>(null);
+  const [selectedOwner, setSelectedOwner] = useState<string | null>(() => {
+    // Initialize from URL params — if the repo owner differs from the logged-in user,
+    // set selectedOwner to match so the correct org's repos are loaded
+    return params.owner ?? null;
+  });
   const [showOrgDropdown, setShowOrgDropdown] = useState(false);
   const [showRepoDropdown, setShowRepoDropdown] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -35,6 +39,15 @@ export default function AppLayout() {
       void navigate('/');
     }
   }, [isAuthenticated, isLoading, navigate]);
+
+  // Sync org dropdown with URL owner param (for deep linking)
+  useEffect(() => {
+    if (params.owner && params.owner !== selectedOwner) {
+      // If URL owner matches logged-in user, treat as Personal (null works too, but
+      // setting it explicitly ensures the repos list fetches for the right owner)
+      setSelectedOwner(params.owner);
+    }
+  }, [params.owner]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Close dropdowns on outside click
   useEffect(() => {
