@@ -423,7 +423,6 @@ export default function GraphVisualization({
           border: '1px solid #30363d',
           borderRadius: 8,
           color: '#c0c7d4',
-          fontSize: '16px',
           cursor: 'pointer',
           zIndex: 20,
           transition: 'background 0.15s, border-color 0.15s',
@@ -437,7 +436,13 @@ export default function GraphVisualization({
           e.currentTarget.style.borderColor = '#30363d';
         }}
       >
-        ⊙
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <circle cx="12" cy="12" r="8" />
+          <line x1="12" y1="2" x2="12" y2="6" />
+          <line x1="12" y1="18" x2="12" y2="22" />
+          <line x1="2" y1="12" x2="6" y2="12" />
+          <line x1="18" y1="12" x2="22" y2="12" />
+        </svg>
       </button>
       {/* Tooltip overlay */}
       <div
