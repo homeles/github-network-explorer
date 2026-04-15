@@ -272,9 +272,13 @@ export class GitHubService {
     const upper = state?.toUpperCase();
     const states = upper === 'ALL' ? ['OPEN', 'CLOSED', 'MERGED'] : upper ? [upper] : ['OPEN'];
     const query = `
-      query($owner: String!, $repo: String!, $states: [PullRequestState!]) {
+      query($owner: String!, $repo: String!, $states: [PullRequestState!], $cursor: String) {
         repository(owner: $owner, name: $repo) {
-          pullRequests(first: 50, states: $states, orderBy: { field: UPDATED_AT, direction: DESC }) {
+          pullRequests(first: 100, states: $states, orderBy: { field: UPDATED_AT, direction: DESC }, after: $cursor) {
+            pageInfo {
+              hasNextPage
+              endCursor
+            }
             nodes {
               number
               title
@@ -386,13 +390,29 @@ export class GitHubService {
       };
     }
 
-    const result = await this.graphqlWithAuth<{
+    interface PRPageResult {
       repository: {
-        pullRequests: { nodes: RawPR[] };
+        pullRequests: {
+          pageInfo: { hasNextPage: boolean; endCursor: string | null };
+          nodes: RawPR[];
+        };
       };
-    }>(query, { owner, repo, states });
+    }
 
-    return result.repository.pullRequests.nodes.map((pr) => {
+    const allPRs: RawPR[] = [];
+    let cursor: string | null = null;
+    let hasMore = true;
+
+    while (hasMore) {
+      const page: PRPageResult = await this.graphqlWithAuth<PRPageResult>(query, { owner, repo, states, cursor });
+
+      allPRs.push(...page.repository.pullRequests.nodes);
+      const pi = page.repository.pullRequests.pageInfo;
+      hasMore = pi.hasNextPage;
+      cursor = pi.endCursor;
+    }
+
+    return allPRs.map((pr) => {
       const lastCommitNode = pr.commits.nodes[0];
       const rollup = lastCommitNode?.commit.statusCheckRollup ?? null;
 
