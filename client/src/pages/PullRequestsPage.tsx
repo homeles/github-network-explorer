@@ -718,7 +718,7 @@ export default function PullRequestsPage() {
         ))}
 
         {/* Filter count badge */}
-        {isFiltered && !isLoading && prs && (
+        {isFiltered && !isLoading && prs && filteredCount < totalCount && (
           <span
             style={{
               marginLeft: 'auto',
@@ -730,7 +730,7 @@ export default function PullRequestsPage() {
               padding: '0.15rem 0.6rem',
             }}
           >
-            {filteredCount} of {totalCount} shown
+            Showing {filteredCount} of {totalCount} PRs
           </span>
         )}
       </div>
