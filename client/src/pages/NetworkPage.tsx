@@ -53,20 +53,18 @@ export default function NetworkPage() {
     branchMap: mainBranchMap,
     isLoading: commitsLoading,
     error,
-    fetchNextPage,
-    hasNextPage,
     isFetchingNextPage,
   } = useMultiBranchCommits(
     owner!,
     repo!,
     fetchBranches,
     !!owner && !!repo && fetchBranches.length > 0,
-    false, // don't auto-fetch all pages — user clicks Load More
+    true, // auto-fetch all pages within the date range
     since,
     until
   );
 
-  // Phase 2: Load other live branches ON DEMAND (not automatic)
+  // Phase 2: Auto-load other live branches
   const otherBranches = effectiveBranches.filter((b) => b !== defaultBranch);
   const [loadedBranchIdx, setLoadedBranchIdx] = useState(0);
   const [extraCommits, setExtraCommits] = useState<CommitNode[]>([]);
@@ -125,6 +123,14 @@ export default function NetworkPage() {
   }
 
   const hasMoreBranches = loadedBranchIdx < otherBranches.length;
+
+  // Auto-load remaining branches once main commits are done
+  useEffect(() => {
+    if (!commitsLoading && !isFetchingNextPage && hasMoreBranches && !loadingExtra) {
+      loadMoreBranches();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [commitsLoading, isFetchingNextPage, hasMoreBranches, loadingExtra, loadedBranchIdx]);
 
   // Merge main + extra commits
   const { commits, branchMap } = useMemo(() => {
@@ -377,28 +383,16 @@ export default function NetworkPage() {
             />
           )}
 
-          {/* Load more commits */}
-          {!commitsLoading && !isFetchingNextPage && hasNextPage && commits.length > 0 && (
-            <div style={{ position: 'absolute', bottom: hasMoreBranches ? 56 : 16, left: '50%', transform: 'translateX(-50%)' }}>
-              <button
-                onClick={() => fetchNextPage()}
-                style={{
-                  background: 'rgba(88,166,255,0.1)',
-                  border: '1px solid rgba(88,166,255,0.3)',
-                  color: '#58a6ff',
-                  borderRadius: 8,
-                  padding: '0.4rem 1rem',
-                  fontSize: '0.8125rem',
-                  cursor: 'pointer',
-                }}
-              >
-                Load more commits ({commits.length} loaded)
-              </button>
-            </div>
-          )}
-          {isFetchingNextPage && (
-            <div style={{ position: 'absolute', bottom: hasMoreBranches ? 56 : 16, left: '50%', transform: 'translateX(-50%)', color: '#58a6ff', fontSize: '0.8125rem' }}>
-              Loading more commits…
+          {/* Loading indicator */}
+          {(isFetchingNextPage || loadingExtra) && commits.length > 0 && (
+            <div style={{
+              position: 'absolute', bottom: 16, left: '50%', transform: 'translateX(-50%)',
+              color: '#8b949e', fontSize: '0.8125rem',
+              background: '#161b22', border: '1px solid #30363d', borderRadius: 8,
+              padding: '0.4rem 1rem',
+            }}>
+              Loading… {commits.length} commits
+              {loadingExtra ? `, ${otherBranches.length - loadedBranchIdx + extraCommits.length > 0 ? loadedBranchIdx : 0} of ${otherBranches.length} branches` : ''}
             </div>
           )}
 
@@ -415,33 +409,6 @@ export default function NetworkPage() {
               }}
             >
               No commits found for the selected branch(es)
-            </div>
-          )}
-
-          {/* Load more branches button */}
-          {!commitsLoading && hasMoreBranches && !loadingExtra && commits.length > 0 && (
-            <div
-              style={{
-                position: 'absolute',
-                bottom: 16,
-                left: '50%',
-                transform: 'translateX(-50%)',
-              }}
-            >
-              <button
-                onClick={loadMoreBranches}
-                style={{
-                  background: '#161b22',
-                  border: '1px solid #30363d',
-                  borderRadius: 8,
-                  color: '#58a6ff',
-                  padding: '0.5rem 1.25rem',
-                  fontSize: '0.875rem',
-                  cursor: 'pointer',
-                }}
-              >
-                Load more branches ({otherBranches.length - loadedBranchIdx} remaining)
-              </button>
             </div>
           )}
         </div>
