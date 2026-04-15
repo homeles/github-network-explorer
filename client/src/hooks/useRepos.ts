@@ -40,14 +40,19 @@ export function useOrgRepos(owner: string | null, userLogin: string | null, enab
   const [accumulatedRepos, setAccumulatedRepos] = useState<UserRepo[]>([]);
   const [hasNextPage, setHasNextPage] = useState(false);
 
-  // Reset when owner changes
+  const isPersonal = owner === null || owner === userLogin;
+
+  // Stable key for the "effective owner" so we only reset when the actual
+  // data source changes, not when flipping between null and userLogin
+  // (both of which resolve to the same "personal" repos endpoint).
+  const effectiveOwner = isPersonal ? '__personal__' : owner;
+
+  // Reset when the effective owner changes
   useEffect(() => {
     setPage(1);
     setAccumulatedRepos([]);
     setHasNextPage(false);
-  }, [owner]);
-
-  const isPersonal = owner === null || owner === userLogin;
+  }, [effectiveOwner]);
 
   const { data, isLoading, error } = useQuery<ReposPage>({
     queryKey: isPersonal ? ['repos-paged', page] : ['org-repos', owner, page],
