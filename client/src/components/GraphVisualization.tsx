@@ -89,7 +89,7 @@ export default function GraphVisualization({
     [commits, branchMap, defaultBranch]
   );
 
-  // Re-center: zoom to latest commit (row 0), centered horizontally, scale 1
+  // Re-center: zoom to latest commit (row 0), positioned at top of viewport
   const recenter = useCallback(() => {
     const svg = svgRef.current;
     const container = containerRef.current;
@@ -97,17 +97,27 @@ export default function GraphVisualization({
     if (!svg || !container || !zoom || nodes.length === 0) return;
 
     const viewWidth = container.clientWidth;
-    const viewHeight = container.clientHeight || 600;
 
-    // Latest commit is row 0 — its y is ROW_HEIGHT / 2
+    // Latest commit is row 0
     const latestNode = nodes[0]!;
-    const targetX = latestNode.x;
-    const targetY = latestNode.y;
+    const latestY = latestNode.y;
 
-    // Zoom scale 1, center the latest commit near the top-center of the viewport
-    const scale = 1;
-    const tx = viewWidth / 2 - targetX * scale;
-    const ty = viewHeight * 0.15 - targetY * scale; // 15% from top
+    // The content starts at x=0 (label left pad) and the graph dots are offset
+    // by LABEL_AREA_WIDTH. We want the full row visible, so anchor x=0 at
+    // a small left margin.
+    const graphWidth = Math.max(calcGraphWidth(nodes), 60);
+    const totalContentWidth = LABEL_AREA_WIDTH + graphWidth + 40;
+
+    // Pick scale so the full content width fits the viewport (but cap at 1)
+    const scale = Math.min(viewWidth / totalContentWidth, 1);
+
+    // Horizontally: center the content if it's narrower than the viewport
+    const contentW = totalContentWidth * scale;
+    const tx = Math.max((viewWidth - contentW) / 2, 8);
+
+    // Vertically: place the latest commit 40px from the top of the viewport
+    const ty = 40 - latestY * scale;
+
     const t = d3.zoomIdentity.translate(tx, ty).scale(scale);
 
     const d3svg = d3.select(svg);
