@@ -214,6 +214,8 @@ export default function AppLayout() {
               alignItems: 'center',
               gap: '0.5rem',
               width: 180,
+              height: 36,
+              boxSizing: 'border-box',
             }}
           >
             {isPersonal && user ? (
@@ -337,6 +339,8 @@ export default function AppLayout() {
               alignItems: 'center',
               gap: '0.5rem',
               width: 320,
+              height: 36,
+              boxSizing: 'border-box',
             }}
           >
             <span style={{ flexGrow: 1, textAlign: 'left', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>

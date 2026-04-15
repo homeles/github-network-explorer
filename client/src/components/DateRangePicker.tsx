@@ -240,11 +240,20 @@ export default function DateRangePicker() {
         style={{
           background: '#161b22',
           border: '1px solid #30363d',
-          borderRadius: 6,
+          borderRadius: 8,
           color: '#dfe2eb',
-          padding: '0.375rem 0.625rem',
+          padding: '0.375rem 0.75rem',
           fontSize: '0.875rem',
           cursor: 'pointer',
+          height: 36,
+          boxSizing: 'border-box',
+          WebkitAppearance: 'none',
+          MozAppearance: 'none',
+          appearance: 'none',
+          paddingRight: '1.75rem',
+          backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%238b949e' d='M2 4l4 4 4-4'/%3E%3C/svg%3E")`,
+          backgroundRepeat: 'no-repeat',
+          backgroundPosition: 'right 0.5rem center',
         }}
       >
         {(Object.keys(TIME_RANGE_LABELS) as TimeRange[]).map((r) => (
@@ -263,7 +272,7 @@ export default function DateRangePicker() {
         style={{
           background: open ? 'rgba(88,166,255,0.08)' : '#161b22',
           border: `1px solid ${open ? '#58a6ff' : '#30363d'}`,
-          borderRadius: 6,
+          borderRadius: 8,
           color: timeRange === 'all' ? '#484f58' : '#dfe2eb',
           padding: '0.375rem 0.75rem',
           fontSize: '0.875rem',
@@ -273,6 +282,8 @@ export default function DateRangePicker() {
           gap: '0.375rem',
           whiteSpace: 'nowrap',
           transition: 'border-color 0.15s, background 0.15s',
+          height: 36,
+          boxSizing: 'border-box',
         }}
       >
         <span aria-hidden="true" style={{ fontSize: '0.875rem' }}>📅</span>
