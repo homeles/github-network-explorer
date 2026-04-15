@@ -1,9 +1,11 @@
 import { createContext, useContext, useState, useMemo, useEffect } from 'react';
 import type { ReactNode } from 'react';
 
-export type TimeRange = '1m' | '3m' | '6m' | '1y' | 'all' | 'custom';
+export type TimeRange = '1w' | '2w' | '1m' | '3m' | '6m' | '1y' | 'all' | 'custom';
 
 export const TIME_RANGE_LABELS: Record<TimeRange, string> = {
+  '1w': 'Last week',
+  '2w': 'Last 2 weeks',
   '1m': 'Last month',
   '3m': 'Last 3 months',
   '6m': 'Last 6 months',
@@ -36,7 +38,9 @@ export function getDateRange(range: TimeRange): { since?: string; until?: string
   const now = new Date();
   const untilDate = localToday();
   const since = new Date(now);
-  if (range === '1m') since.setMonth(since.getMonth() - 1);
+  if (range === '1w') since.setDate(since.getDate() - 7);
+  else if (range === '2w') since.setDate(since.getDate() - 14);
+  else if (range === '1m') since.setMonth(since.getMonth() - 1);
   else if (range === '3m') since.setMonth(since.getMonth() - 3);
   else if (range === '6m') since.setMonth(since.getMonth() - 6);
   else if (range === '1y') since.setFullYear(since.getFullYear() - 1);
@@ -58,9 +62,9 @@ interface DateRangeContextValue {
 const DateRangeContext = createContext<DateRangeContextValue | null>(null);
 
 export function DateRangeProvider({ children }: { children: ReactNode }) {
-  const [timeRange, setTimeRange] = useState<TimeRange>('1m');
-  const [customSince, setCustomSince] = useState<string>(() => getDateRange('1m').since!.slice(0, 10));
-  const [customUntil, setCustomUntil] = useState<string>(() => getDateRange('1m').until!.slice(0, 10));
+  const [timeRange, setTimeRange] = useState<TimeRange>('1w');
+  const [customSince, setCustomSince] = useState<string>(() => getDateRange('1w').since!.slice(0, 10));
+  const [customUntil, setCustomUntil] = useState<string>(() => getDateRange('1w').until!.slice(0, 10));
 
   // Sync date inputs when switching to a preset
   useEffect(() => {
