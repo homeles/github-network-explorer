@@ -49,15 +49,13 @@ export default function GraphPage() {
     branchMap,
     isLoading: commitsLoading,
     error,
-    fetchNextPage,
-    hasNextPage,
     isFetchingNextPage,
   } = useMultiBranchCommits(
     owner!,
     repo!,
     effectiveBranches,
     !!owner && !!repo && effectiveBranches.length > 0,
-    false,
+    true, // auto-fetch all pages within the date range
     since,
     until
   );
@@ -245,32 +243,23 @@ export default function GraphPage() {
             </div>
           )}
 
-          {/* Load more button */}
-          {hasNextPage && commits.length > 0 && (
+          {/* Loading more indicator */}
+          {isFetchingNextPage && commits.length > 0 && (
             <div
               style={{
                 position: 'absolute',
                 bottom: 16,
                 left: '50%',
                 transform: 'translateX(-50%)',
+                color: '#8b949e',
+                fontSize: '0.8125rem',
+                background: '#161b22',
+                border: '1px solid #30363d',
+                borderRadius: 8,
+                padding: '0.4rem 1rem',
               }}
             >
-              <button
-                onClick={() => void fetchNextPage()}
-                disabled={isFetchingNextPage}
-                style={{
-                  background: '#161b22',
-                  border: '1px solid #30363d',
-                  borderRadius: 8,
-                  color: '#58a6ff',
-                  padding: '0.5rem 1.25rem',
-                  fontSize: '0.875rem',
-                  cursor: isFetchingNextPage ? 'not-allowed' : 'pointer',
-                  opacity: isFetchingNextPage ? 0.6 : 1,
-                }}
-              >
-                {isFetchingNextPage ? 'Loading more...' : 'Load more commits'}
-              </button>
+              Loading commits… {commits.length} loaded
             </div>
           )}
         </div>

@@ -2,9 +2,10 @@ import { useState } from 'react';
 import { useParams, useNavigate } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../lib/api.js';
-import type { BranchInfo } from '../lib/api.js';
+import type { BranchInfo, TagInfo } from '../lib/api.js';
 
 type SortMode = 'updated' | 'name' | 'ahead';
+type TabMode = 'branches' | 'tags';
 
 function timeAgo(dateStr: string): string {
   if (!dateStr) return '';
@@ -202,15 +203,117 @@ function BranchRow({
   );
 }
 
+function TagRow({ tag }: { tag: TagInfo }) {
+  const date = tag.taggerDate ?? tag.committedDate;
+  const authorLogin = tag.author.login ?? tag.author.name ?? '';
+  return (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: '0.75rem',
+        padding: '0.75rem 1rem',
+        borderBottom: '1px solid #21262d',
+      }}
+    >
+      {/* Tag icon + name */}
+      <div style={{ flex: '0 0 220px', minWidth: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+          <span style={{ fontSize: '0.875rem' }}>🏷️</span>
+          <span
+            style={{
+              fontFamily: 'monospace',
+              fontSize: '0.875rem',
+              color: '#58a6ff',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+              maxWidth: 170,
+            }}
+          >
+            {tag.name}
+          </span>
+        </div>
+      </div>
+
+      {/* Commit message */}
+      <div
+        style={{
+          flex: 1,
+          minWidth: 0,
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
+          color: '#8b949e',
+          fontSize: '0.8125rem',
+        }}
+      >
+        {(tag.message?.split('\n')[0] ?? tag.commitMessage.split('\n')[0])}
+      </div>
+
+      {/* Author + age */}
+      <div
+        style={{
+          flex: '0 0 140px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '0.375rem',
+          justifyContent: 'flex-end',
+        }}
+      >
+        {tag.author.avatarUrl && (
+          <img
+            src={tag.author.avatarUrl}
+            alt={authorLogin}
+            style={{
+              width: 20,
+              height: 20,
+              borderRadius: '50%',
+              border: '1px solid #30363d',
+            }}
+          />
+        )}
+        <span style={{ color: '#8b949e', fontSize: '0.75rem' }}>
+          {timeAgo(date)}
+        </span>
+      </div>
+
+      {/* Commit SHA */}
+      <div style={{ flex: '0 0 140px', display: 'flex', justifyContent: 'flex-end' }}>
+        <span
+          style={{
+            fontFamily: 'monospace',
+            fontSize: '0.75rem',
+            color: '#58a6ff',
+            background: 'rgba(88,166,255,0.1)',
+            borderRadius: 4,
+            padding: '1px 5px',
+          }}
+        >
+          {tag.commitAbbreviatedOid}
+        </span>
+      </div>
+    </div>
+  );
+}
+
 export default function BranchesPage() {
   const { owner, repo } = useParams<{ owner: string; repo: string }>();
   const navigate = useNavigate();
   const [sortMode, setSortMode] = useState<SortMode>('updated');
+  const [activeTab, setActiveTab] = useState<TabMode>('branches');
+  const [searchQuery, setSearchQuery] = useState('');
 
-  const { data: branches, isLoading, error } = useQuery({
+  const { data: branches, isLoading: branchesLoading, error: branchesError } = useQuery({
     queryKey: ['branches', owner, repo],
     queryFn: () => api.repos.branches(owner!, repo!),
     enabled: !!owner && !!repo,
+  });
+
+  const { data: tags, isLoading: tagsLoading, error: tagsError } = useQuery({
+    queryKey: ['tags', owner, repo],
+    queryFn: () => api.repos.tags(owner!, repo!),
+    enabled: !!owner && !!repo && activeTab === 'tags',
   });
 
   if (!owner || !repo) {
@@ -248,6 +351,14 @@ export default function BranchesPage() {
       })
     : [];
 
+  const q = searchQuery.toLowerCase();
+  const filteredBranches = q ? sorted.filter((b) => b.name.toLowerCase().includes(q)) : sorted;
+  const filteredTags = q && tags ? tags.filter((t) => t.name.toLowerCase().includes(q)) : (tags ?? []);
+
+  const isLoading = activeTab === 'branches' ? branchesLoading : tagsLoading;
+  const error = activeTab === 'branches' ? branchesError : tagsError;
+  const isEmpty = activeTab === 'branches' ? filteredBranches.length === 0 : filteredTags.length === 0;
+
   return (
     <div
       style={{
@@ -268,41 +379,111 @@ export default function BranchesPage() {
           display: 'flex',
           alignItems: 'center',
           gap: '0.5rem',
+          flexWrap: 'wrap',
         }}
       >
-        <span style={{ fontSize: '1rem', marginRight: '0.25rem' }}>🏷️</span>
-        <span
-          style={{ color: '#dfe2eb', fontWeight: 600, fontSize: '0.9375rem' }}
-        >
+        <span style={{ fontSize: '1rem', marginRight: '0.25rem' }}>🌿</span>
+        <span style={{ color: '#dfe2eb', fontWeight: 600, fontSize: '0.9375rem' }}>
           Branches
         </span>
         <span style={{ color: '#8b949e', fontSize: '0.875rem' }}>
           {owner}/{repo}
         </span>
-        <div style={{ flexGrow: 1 }} />
-        {/* Sort controls */}
-        <span style={{ color: '#8b949e', fontSize: '0.8125rem' }}>Sort:</span>
-        {(['updated', 'name', 'ahead'] as SortMode[]).map((mode) => (
-          <button
-            key={mode}
-            onClick={() => setSortMode(mode)}
+
+        {/* Search bar */}
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.375rem',
+            background: '#0d1117',
+            border: '1px solid #30363d',
+            borderRadius: 6,
+            padding: '0.25rem 0.5rem',
+            marginLeft: '0.5rem',
+          }}
+        >
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="#8b949e">
+            <path d="M10.68 11.74a6 6 0 0 1-7.922-8.982 6 6 0 0 1 8.982 7.922l3.04 3.04a.749.749 0 0 1-.326 1.275.749.749 0 0 1-.734-.215ZM11.5 7a4.499 4.499 0 1 0-8.997 0A4.499 4.499 0 0 0 11.5 7Z" />
+          </svg>
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search..."
             style={{
-              background: sortMode === mode ? 'rgba(88,166,255,0.15)' : 'transparent',
-              border: `1px solid ${sortMode === mode ? '#58a6ff' : '#30363d'}`,
-              borderRadius: 6,
-              color: sortMode === mode ? '#58a6ff' : '#8b949e',
-              padding: '0.25rem 0.625rem',
+              background: 'transparent',
+              border: 'none',
+              outline: 'none',
+              color: '#dfe2eb',
               fontSize: '0.8125rem',
+              width: 140,
+            }}
+          />
+        </div>
+
+        <div style={{ flexGrow: 1 }} />
+
+        {/* Sort controls (branches only) */}
+        {activeTab === 'branches' && (
+          <>
+            <span style={{ color: '#8b949e', fontSize: '0.8125rem' }}>Sort:</span>
+            {(['updated', 'name', 'ahead'] as SortMode[]).map((mode) => (
+              <button
+                key={mode}
+                onClick={() => setSortMode(mode)}
+                style={{
+                  background: sortMode === mode ? 'rgba(88,166,255,0.15)' : 'transparent',
+                  border: `1px solid ${sortMode === mode ? '#58a6ff' : '#30363d'}`,
+                  borderRadius: 6,
+                  color: sortMode === mode ? '#58a6ff' : '#8b949e',
+                  padding: '0.25rem 0.625rem',
+                  fontSize: '0.8125rem',
+                  cursor: 'pointer',
+                }}
+              >
+                {mode === 'updated' ? 'Recent' : mode === 'name' ? 'Name' : 'Ahead'}
+              </button>
+            ))}
+          </>
+        )}
+      </div>
+
+      {/* Tabs */}
+      <div
+        style={{
+          display: 'flex',
+          gap: 0,
+          borderBottom: '1px solid #21262d',
+          background: '#161b22',
+          flexShrink: 0,
+          padding: '0 1rem',
+        }}
+      >
+        {(['branches', 'tags'] as TabMode[]).map((tab) => (
+          <button
+            key={tab}
+            onClick={() => setActiveTab(tab)}
+            style={{
+              background: 'transparent',
+              border: 'none',
+              borderBottom: activeTab === tab ? '2px solid #58a6ff' : '2px solid transparent',
+              color: activeTab === tab ? '#dfe2eb' : '#8b949e',
+              padding: '0.625rem 0.875rem',
+              fontSize: '0.875rem',
               cursor: 'pointer',
+              fontWeight: activeTab === tab ? 600 : 400,
+              transition: 'color 0.15s',
+              textTransform: 'capitalize',
             }}
           >
-            {mode === 'updated' ? 'Recent' : mode === 'name' ? 'Name' : 'Ahead'}
+            {tab === 'branches' ? '🌿 Branches' : '🏷️ Tags'}
           </button>
         ))}
       </div>
 
       {/* Column headers */}
-      {!isLoading && !error && sorted.length > 0 && (
+      {!isLoading && !error && !isEmpty && (
         <div
           style={{
             display: 'flex',
@@ -315,16 +496,16 @@ export default function BranchesPage() {
           }}
         >
           <div style={{ flex: '0 0 220px', color: '#8b949e', fontSize: '0.75rem', fontWeight: 600 }}>
-            BRANCH
+            {activeTab === 'branches' ? 'BRANCH' : 'TAG'}
           </div>
           <div style={{ flex: 1, color: '#8b949e', fontSize: '0.75rem', fontWeight: 600 }}>
-            LAST COMMIT
+            {activeTab === 'branches' ? 'LAST COMMIT' : 'MESSAGE'}
           </div>
           <div style={{ flex: '0 0 140px', color: '#8b949e', fontSize: '0.75rem', fontWeight: 600, textAlign: 'right' }}>
             UPDATED
           </div>
           <div style={{ flex: '0 0 140px', color: '#8b949e', fontSize: '0.75rem', fontWeight: 600, textAlign: 'right' }}>
-            AHEAD / BEHIND
+            {activeTab === 'branches' ? 'AHEAD / BEHIND' : 'COMMIT'}
           </div>
         </div>
       )}
@@ -352,7 +533,7 @@ export default function BranchesPage() {
                 animation: 'spin 0.8s linear infinite',
               }}
             />
-            Loading branches...
+            Loading {activeTab}...
             <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
           </div>
         ) : error ? (
@@ -364,9 +545,9 @@ export default function BranchesPage() {
               fontSize: '0.875rem',
             }}
           >
-            {error instanceof Error ? error.message : 'Failed to load branches'}
+            {error instanceof Error ? error.message : `Failed to load ${activeTab}`}
           </div>
-        ) : sorted.length === 0 ? (
+        ) : isEmpty ? (
           <div
             style={{
               display: 'flex',
@@ -378,12 +559,18 @@ export default function BranchesPage() {
               color: '#8b949e',
             }}
           >
-            <span style={{ fontSize: '2rem' }}>🏷️</span>
-            <span style={{ fontSize: '0.9375rem' }}>No branches found</span>
+            <span style={{ fontSize: '2rem' }}>{activeTab === 'branches' ? '🌿' : '🏷️'}</span>
+            <span style={{ fontSize: '0.9375rem' }}>
+              {searchQuery ? `No ${activeTab} matching "${searchQuery}"` : `No ${activeTab} found`}
+            </span>
           </div>
-        ) : (
-          sorted.map((branch) => (
+        ) : activeTab === 'branches' ? (
+          filteredBranches.map((branch) => (
             <BranchRow key={branch.name} branch={branch} onNavigate={handleNavigate} />
+          ))
+        ) : (
+          filteredTags.map((tag) => (
+            <TagRow key={tag.name} tag={tag} />
           ))
         )}
       </div>
