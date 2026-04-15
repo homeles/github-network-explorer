@@ -3,6 +3,8 @@ import { useParams } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../lib/api.js';
 import type { PullRequest } from '../lib/api.js';
+import { useDateRange } from '../contexts/DateRangeContext.js';
+import DateRangePicker from '../components/DateRangePicker.js';
 
 type PRState = 'ALL' | 'OPEN' | 'CLOSED' | 'MERGED';
 type SortMode = 'newest' | 'oldest' | 'most-comments' | 'most-reviews';
@@ -547,6 +549,8 @@ export default function PullRequestsPage() {
   const [authorFilter, setAuthorFilter] = useState('');
   const [reviewerFilter, setReviewerFilter] = useState('');
 
+  const { since, until } = useDateRange();
+
   const { data: prs, isLoading, error } = useQuery({
     queryKey: ['pulls', owner, repo, activeState],
     queryFn: () => api.repos.pullRequests(owner!, repo!, activeState),
@@ -605,8 +609,11 @@ export default function PullRequestsPage() {
       })
     : [];
 
-  // Client-side filtering (author/reviewer only — date range does not apply to PRs)
+  // Client-side date filtering on createdAt
   const filteredPrs = sortedPrs.filter((pr) => {
+    const created = new Date(pr.createdAt).getTime();
+    if (since && created < new Date(since).getTime()) return false;
+    if (until && created > new Date(until).getTime()) return false;
     if (authorFilter && pr.author?.login !== authorFilter) return false;
     if (reviewerFilter) {
       const hasReviewer =
@@ -617,7 +624,7 @@ export default function PullRequestsPage() {
     return true;
   });
 
-  const isFiltered = !!(authorFilter || reviewerFilter);
+  const isFiltered = !!(since || until || authorFilter || reviewerFilter);
   const totalCount = sortedPrs.length;
   const filteredCount = filteredPrs.length;
 
@@ -654,6 +661,9 @@ export default function PullRequestsPage() {
           {owner}/{repo}
         </span>
         <div style={{ flexGrow: 1 }} />
+
+        {/* Date range picker */}
+        <DateRangePicker />
 
         {/* Author filter */}
         <FilterDropdown
