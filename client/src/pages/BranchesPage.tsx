@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../lib/api.js';
 import type { BranchInfo, TagInfo } from '../lib/api.js';
+import { useUpdateSearchParams } from '../hooks/useUrlParams.js';
 
 type SortMode = 'updated' | 'name' | 'ahead';
 type TabMode = 'branches' | 'tags';
@@ -300,9 +301,31 @@ function TagRow({ tag }: { tag: TagInfo }) {
 export default function BranchesPage() {
   const { owner, repo } = useParams<{ owner: string; repo: string }>();
   const navigate = useNavigate();
-  const [sortMode, setSortMode] = useState<SortMode>('updated');
-  const [activeTab, setActiveTab] = useState<TabMode>('branches');
-  const [searchQuery, setSearchQuery] = useState('');
+
+  const [sortMode, setSortMode] = useState<SortMode>(() => {
+    const s = new URLSearchParams(window.location.search).get('sort');
+    if (s === 'updated' || s === 'name' || s === 'ahead') return s;
+    return 'updated';
+  });
+  const [activeTab, setActiveTab] = useState<TabMode>(() => {
+    const t = new URLSearchParams(window.location.search).get('tab');
+    if (t === 'branches' || t === 'tags') return t;
+    return 'branches';
+  });
+  const [searchQuery, setSearchQuery] = useState(
+    () => new URLSearchParams(window.location.search).get('q') ?? '',
+  );
+
+  const { updateParams } = useUpdateSearchParams();
+
+  // Sync sort/tab/q to URL on change
+  useEffect(() => {
+    updateParams({
+      sort: sortMode === 'updated' ? null : sortMode,
+      tab: activeTab === 'branches' ? null : activeTab,
+      q: searchQuery || null,
+    });
+  }, [sortMode, activeTab, searchQuery]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const { data: branches, isLoading: branchesLoading, error: branchesError } = useQuery({
     queryKey: ['branches', owner, repo],

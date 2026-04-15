@@ -59,12 +59,39 @@ interface DateRangeContextValue {
   until: string | undefined;
 }
 
+const VALID_RANGES = ['1w', '2w', '1m', '3m', '6m', '1y', 'all', 'custom'] as const;
+
+/** Read initial date range from URL search params (synchronous, for useState init). */
+function getInitialRange(): { range: TimeRange; since: string; until: string } {
+  if (typeof window === 'undefined') {
+    const def = getDateRange('1w');
+    return { range: '1w', since: def.since!.slice(0, 10), until: def.until!.slice(0, 10) };
+  }
+  const params = new URLSearchParams(window.location.search);
+  const range = params.get('range') as TimeRange | null;
+  if (range && (VALID_RANGES as readonly string[]).includes(range)) {
+    if (range === 'custom') {
+      const since = params.get('since') ?? getDateRange('1w').since!.slice(0, 10);
+      const until = params.get('until') ?? getDateRange('1w').until!.slice(0, 10);
+      return { range: 'custom', since, until };
+    }
+    if (range === 'all') {
+      return { range: 'all', since: '', until: '' };
+    }
+    const computed = getDateRange(range);
+    return { range, since: computed.since!.slice(0, 10), until: computed.until!.slice(0, 10) };
+  }
+  const def = getDateRange('1w');
+  return { range: '1w', since: def.since!.slice(0, 10), until: def.until!.slice(0, 10) };
+}
+
 const DateRangeContext = createContext<DateRangeContextValue | null>(null);
 
 export function DateRangeProvider({ children }: { children: ReactNode }) {
-  const [timeRange, setTimeRange] = useState<TimeRange>('1w');
-  const [customSince, setCustomSince] = useState<string>(() => getDateRange('1w').since!.slice(0, 10));
-  const [customUntil, setCustomUntil] = useState<string>(() => getDateRange('1w').until!.slice(0, 10));
+  const initial = getInitialRange();
+  const [timeRange, setTimeRange] = useState<TimeRange>(initial.range);
+  const [customSince, setCustomSince] = useState<string>(initial.since);
+  const [customUntil, setCustomUntil] = useState<string>(initial.until);
 
   // Sync date inputs when switching to a preset
   useEffect(() => {
