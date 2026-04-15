@@ -1,10 +1,17 @@
-import { useEffect, useRef, useMemo } from 'react';
+import { useEffect, useRef, useMemo, useCallback } from 'react';
 import * as d3 from 'd3';
 import { buildDag, calcGraphWidth, calcGraphHeight, GRAPH_CONSTANTS } from '../lib/dag.js';
 import type { DagNode } from '../lib/dag.js';
 import type { CommitNode } from '../lib/api.js';
 
 const { NODE_RADIUS } = GRAPH_CONSTANTS;
+
+// Layout: commit details on LEFT, graph dots on RIGHT
+const LABEL_LEFT_PAD = 16;     // left padding for text labels
+const SHA_WIDTH = 64;          // width for abbreviated SHA
+const MSG_WIDTH = 460;         // width for commit message
+const DATE_WIDTH = 80;         // width for relative date
+const LABEL_AREA_WIDTH = LABEL_LEFT_PAD + SHA_WIDTH + MSG_WIDTH + DATE_WIDTH + 24;
 
 // Color palette for lanes
 const LANE_COLORS = [
@@ -82,6 +89,32 @@ export default function GraphVisualization({
     [commits, branchMap, defaultBranch]
   );
 
+  // Re-center: zoom to latest commit (row 0), centered horizontally, scale 1
+  const recenter = useCallback(() => {
+    const svg = svgRef.current;
+    const container = containerRef.current;
+    const zoom = zoomBehaviorRef.current;
+    if (!svg || !container || !zoom || nodes.length === 0) return;
+
+    const viewWidth = container.clientWidth;
+    const viewHeight = container.clientHeight || 600;
+
+    // Latest commit is row 0 — its y is ROW_HEIGHT / 2
+    const latestNode = nodes[0]!;
+    const targetX = latestNode.x;
+    const targetY = latestNode.y;
+
+    // Zoom scale 1, center the latest commit near the top-center of the viewport
+    const scale = 1;
+    const tx = viewWidth / 2 - targetX * scale;
+    const ty = viewHeight * 0.15 - targetY * scale; // 15% from top
+    const t = d3.zoomIdentity.translate(tx, ty).scale(scale);
+
+    const d3svg = d3.select(svg);
+    d3svg.transition().duration(400).call(zoom.transform, t);
+    zoomTransformRef.current = t;
+  }, [nodes]);
+
   useEffect(() => {
     const svg = svgRef.current;
     const container = containerRef.current;
@@ -123,6 +156,10 @@ export default function GraphVisualization({
     const nodeMap = new Map<string, DagNode>();
     for (const n of nodes) nodeMap.set(n.oid, n);
 
+    // Graph dots are on the RIGHT side, offset by LABEL_AREA_WIDTH
+    // Remap node x positions: original x is lane-based, shift right by label area
+    const graphOffsetX = LABEL_AREA_WIDTH;
+
     // ─── Draw edges ───
     const edgeGroup = g.append('g').attr('class', 'edges');
 
@@ -131,9 +168,9 @@ export default function GraphVisualization({
         const parent = nodeMap.get(parentRef.oid);
         if (!parent) continue;
 
-        const x1 = node.x;
+        const x1 = graphOffsetX + node.x;
         const y1 = node.y;
-        const x2 = parent.x;
+        const x2 = graphOffsetX + parent.x;
         const y2 = parent.y;
         const color = getLaneColor(node.lane);
 
@@ -156,14 +193,12 @@ export default function GraphVisualization({
     // ─── Draw nodes ───
     const nodeGroup = g.append('g').attr('class', 'nodes');
 
-    // Label area starts after the graph columns
-    const labelX = graphWidth + 12;
-    const rightPanelWidth = 600;
-    const totalContentWidth = graphWidth + rightPanelWidth;
+    const totalContentWidth = LABEL_AREA_WIDTH + graphWidth + 40;
 
     for (const node of nodes) {
       const isSelected = node.oid === selectedOid;
       const color = getLaneColor(node.lane);
+      const dotX = graphOffsetX + node.x;
       const nodeG = nodeGroup
         .append('g')
         .attr('class', 'node')
@@ -175,7 +210,7 @@ export default function GraphVisualization({
       if (isSelected) {
         nodeG
           .append('circle')
-          .attr('cx', node.x)
+          .attr('cx', dotX)
           .attr('cy', node.y)
           .attr('r', NODE_RADIUS + 4)
           .attr('fill', 'none')
@@ -190,7 +225,7 @@ export default function GraphVisualization({
           .append('polygon')
           .attr(
             'points',
-            `${node.x},${node.y - size} ${node.x + size},${node.y} ${node.x},${node.y + size} ${node.x - size},${node.y}`
+            `${dotX},${node.y - size} ${dotX + size},${node.y} ${dotX},${node.y + size} ${dotX - size},${node.y}`
           )
           .attr('fill', isSelected ? color : '#161b22')
           .attr('stroke', color)
@@ -198,7 +233,7 @@ export default function GraphVisualization({
       } else {
         nodeG
           .append('circle')
-          .attr('cx', node.x)
+          .attr('cx', dotX)
           .attr('cy', node.y)
           .attr('r', NODE_RADIUS)
           .attr('fill', isSelected ? color : '#161b22')
@@ -206,10 +241,11 @@ export default function GraphVisualization({
           .attr('stroke-width', 2);
       }
 
+      // ─── LEFT SIDE: commit details (SHA, message, date) ───
       // SHA label
       nodeG
         .append('text')
-        .attr('x', labelX)
+        .attr('x', LABEL_LEFT_PAD)
         .attr('y', node.y)
         .attr('dy', '0.32em')
         .attr('fill', isSelected ? '#dfe2eb' : '#c0c7d4')
@@ -223,7 +259,7 @@ export default function GraphVisualization({
 
       nodeG
         .append('text')
-        .attr('x', labelX + 64)
+        .attr('x', LABEL_LEFT_PAD + SHA_WIDTH)
         .attr('y', node.y)
         .attr('dy', '0.32em')
         .attr('fill', isSelected ? '#dfe2eb' : '#c0c7d4')
@@ -233,7 +269,7 @@ export default function GraphVisualization({
       // Date
       nodeG
         .append('text')
-        .attr('x', labelX + 64 + 460)
+        .attr('x', LABEL_LEFT_PAD + SHA_WIDTH + MSG_WIDTH)
         .attr('y', node.y)
         .attr('dy', '0.32em')
         .attr('fill', '#8b949e')
@@ -360,6 +396,39 @@ export default function GraphVisualization({
         ref={svgRef}
         style={{ width: '100%', height: '100%', display: 'block' }}
       />
+      {/* Re-center button */}
+      <button
+        onClick={recenter}
+        title="Re-center to latest commit"
+        style={{
+          position: 'absolute',
+          top: 12,
+          right: 12,
+          width: 36,
+          height: 36,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          background: '#21262d',
+          border: '1px solid #30363d',
+          borderRadius: 8,
+          color: '#c0c7d4',
+          fontSize: '16px',
+          cursor: 'pointer',
+          zIndex: 20,
+          transition: 'background 0.15s, border-color 0.15s',
+        }}
+        onMouseEnter={(e) => {
+          e.currentTarget.style.background = '#30363d';
+          e.currentTarget.style.borderColor = '#58a6ff';
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.background = '#21262d';
+          e.currentTarget.style.borderColor = '#30363d';
+        }}
+      >
+        ⊙
+      </button>
       {/* Tooltip overlay */}
       <div
         ref={tooltipRef}
