@@ -194,6 +194,77 @@ export default function NetworkGraphVisualization({
       }
     }
 
+    // Draw date axis at the bottom of the graph
+    // Commits are evenly spaced (not proportional to time), so we sample
+    // a subset of commit positions and label them with their actual dates.
+    {
+      // Build array of {x, date} sorted by x (same as chronological)
+      const dateTicks = layout.nodes
+        .map((n) => ({ x: n.x, ts: new Date(n.committedDate).getTime() }))
+        .filter((d) => d.ts > 0)
+        .sort((a, b) => a.x - b.x);
+
+      if (dateTicks.length >= 2) {
+        const axisY = layout.totalHeight + 8;
+        const axisGroup = g.append('g')
+          .attr('class', 'date-axis')
+          .attr('transform', `translate(0,${axisY})`);
+
+        // Draw the baseline
+        const minX = dateTicks[0].x;
+        const maxX = dateTicks[dateTicks.length - 1].x;
+        axisGroup.append('line')
+          .attr('x1', minX)
+          .attr('x2', maxX)
+          .attr('y1', 0)
+          .attr('y2', 0)
+          .style('stroke', '#30363d');
+
+        // Pick evenly-spaced samples from the commit positions
+        const maxTicks = Math.min(10, Math.max(3, Math.floor(viewWidth / 100)));
+        const step = Math.max(1, Math.floor((dateTicks.length - 1) / (maxTicks - 1)));
+        const samples: Array<{ x: number; ts: number }> = [];
+        for (let i = 0; i < dateTicks.length; i += step) {
+          samples.push(dateTicks[i]);
+        }
+        // Always include the last tick
+        if (samples[samples.length - 1] !== dateTicks[dateTicks.length - 1]) {
+          samples.push(dateTicks[dateTicks.length - 1]);
+        }
+
+        const spanDays = (dateTicks[dateTicks.length - 1].ts - dateTicks[0].ts) / 86400000;
+        const fmtStr = spanDays > 365 ? '%b %Y' : '%b %d';
+        const fmt = d3.timeFormat(fmtStr);
+
+        // Filter out samples whose labels would overlap (min 60px apart)
+        const filtered: typeof samples = [samples[0]];
+        for (let i = 1; i < samples.length; i++) {
+          if (samples[i].x - filtered[filtered.length - 1].x >= 60) {
+            filtered.push(samples[i]);
+          }
+        }
+
+        for (const sample of filtered) {
+          // Tick mark
+          axisGroup.append('line')
+            .attr('x1', sample.x)
+            .attr('x2', sample.x)
+            .attr('y1', 0)
+            .attr('y2', 4)
+            .style('stroke', '#30363d');
+
+          // Label
+          axisGroup.append('text')
+            .attr('x', sample.x)
+            .attr('y', 18)
+            .attr('text-anchor', 'middle')
+            .style('fill', '#8b949e')
+            .style('font-size', '0.75rem')
+            .text(fmt(new Date(sample.ts)));
+        }
+      }
+    }
+
     // Draw nodes
     const nodeGroup = g.append('g').attr('class', 'nodes');
 
@@ -304,7 +375,8 @@ export default function NetworkGraphVisualization({
       zoom.transform(d3svg, zoomTransformRef.current);
     } else {
       const scaleX = viewWidth / (layout.totalWidth + 60);
-      const scaleY = viewHeight / (layout.totalHeight + 20);
+      // +50 to account for the date axis at the bottom
+      const scaleY = viewHeight / (layout.totalHeight + 50);
       const scale = Math.min(scaleX, scaleY, 2);
       const contentW = layout.totalWidth * scale;
       const contentH = layout.totalHeight * scale;
