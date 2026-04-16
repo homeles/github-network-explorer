@@ -109,7 +109,7 @@ export interface DirectoryStats {
 
 export interface CodeFrequencyData {
   timeSeries: Array<{
-    weekStart: string;
+    date: string;
     additions: number;
     deletions: number;
     commitCount: number;
@@ -462,7 +462,7 @@ export const api = {
       let timeSeries = (freqData ?? [])
         .filter((w) => w[1] !== 0 || w[2] !== 0)
         .map((w) => ({
-          weekStart: new Date(w[0]! * 1000).toISOString().slice(0, 10),
+          date: new Date(w[0]! * 1000).toISOString().slice(0, 10),
           additions: w[1] ?? 0,
           deletions: Math.abs(w[2] ?? 0),
           commitCount: 0,
@@ -473,7 +473,7 @@ export const api = {
         const since = options.since ? new Date(options.since) : null;
         const until = options.until ? new Date(options.until) : null;
         timeSeries = timeSeries.filter((p) => {
-          const d = new Date(p.weekStart);
+          const d = new Date(p.date);
           if (since && d < since) return false;
           if (until && d > until) return false;
           return true;
@@ -498,8 +498,8 @@ export const api = {
       );
 
       const period = {
-        since: timeSeries[0]?.weekStart ?? '',
-        until: timeSeries[timeSeries.length - 1]?.weekStart ?? '',
+        since: timeSeries[0]?.date ?? '',
+        until: timeSeries[timeSeries.length - 1]?.date ?? '',
       };
 
       return {

@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react';
 import * as d3 from 'd3';
 
 interface TimeSeriesPoint {
-  weekStart: string;
+  date: string;
   additions: number;
   deletions: number;
   commitCount: number;
@@ -34,7 +34,7 @@ export default function CodeFrequencyChart({ data }: Props) {
 
     const parsed = data.map((d) => ({
       ...d,
-      date: new Date(d.weekStart + 'T00:00:00Z'),
+      date: new Date(d.date + 'T00:00:00Z'),
     }));
 
     const maxVal = d3.max(parsed, (d) => Math.max(d.additions, d.deletions)) ?? 1;
