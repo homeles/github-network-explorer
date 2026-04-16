@@ -20,6 +20,9 @@ export default function AppLayout() {
     // set selectedOwner to match so the correct org's repos are loaded
     return params.owner ?? null;
   });
+  // Track when user explicitly picks an org/Personal so the URL-sync effect
+  // doesn't immediately override their choice
+  const userSelectedOwnerRef = useRef(false);
   const [showOrgDropdown, setShowOrgDropdown] = useState(false);
   const [showRepoDropdown, setShowRepoDropdown] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -40,11 +43,14 @@ export default function AppLayout() {
     }
   }, [isAuthenticated, isLoading, navigate]);
 
-  // Sync org dropdown with URL owner param (for deep linking)
+  // Sync org dropdown with URL owner param (for deep linking / navigation)
+  // Skip if the user just explicitly selected an org (to avoid overriding their choice)
   useEffect(() => {
+    if (userSelectedOwnerRef.current) {
+      userSelectedOwnerRef.current = false;
+      return;
+    }
     if (params.owner && params.owner !== selectedOwner) {
-      // If URL owner matches logged-in user, treat as Personal (null works too, but
-      // setting it explicitly ensures the repos list fetches for the right owner)
       setSelectedOwner(params.owner);
     }
   }, [params.owner]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -79,6 +85,7 @@ export default function AppLayout() {
 
   function selectOrg(owner: string | null) {
     setShowOrgDropdown(false);
+    userSelectedOwnerRef.current = true;
     setSelectedOwner(owner);
     // If current repo doesn't belong to new owner, navigate to /app
     if (params.owner && params.owner !== (owner ?? user?.login)) {
@@ -207,6 +214,8 @@ export default function AppLayout() {
               alignItems: 'center',
               gap: '0.5rem',
               width: 180,
+              height: 36,
+              boxSizing: 'border-box',
             }}
           >
             {isPersonal && user ? (
@@ -330,6 +339,8 @@ export default function AppLayout() {
               alignItems: 'center',
               gap: '0.5rem',
               width: 320,
+              height: 36,
+              boxSizing: 'border-box',
             }}
           >
             <span style={{ flexGrow: 1, textAlign: 'left', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>

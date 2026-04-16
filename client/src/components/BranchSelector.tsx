@@ -58,9 +58,9 @@ export default function BranchSelector({ branches, selected, onChange, disabled 
         style={{
           background: '#0d1117',
           border: '1px solid #30363d',
-          borderRadius: 6,
+          borderRadius: 8,
           color: '#dfe2eb',
-          padding: '0.25rem 0.625rem',
+          padding: '0.375rem 0.75rem',
           fontSize: '0.875rem',
           cursor: disabled ? 'not-allowed' : 'pointer',
           display: 'flex',
@@ -68,6 +68,8 @@ export default function BranchSelector({ branches, selected, onChange, disabled 
           gap: '0.375rem',
           opacity: disabled ? 0.6 : 1,
           minWidth: 140,
+          height: 36,
+          boxSizing: 'border-box',
         }}
       >
         <span style={{ flex: 1, textAlign: 'left', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
