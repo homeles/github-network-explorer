@@ -140,6 +140,22 @@ export default function DirectoryTreemap({ data, onPathSelect, currentPath, owne
       return '#8b949e';
     }
 
+    // Tooltip (created early so dirG and leafG can both reference it)
+    const tooltip = d3
+      .select(container)
+      .append('div')
+      .style('position', 'absolute')
+      .style('background', '#161b22')
+      .style('border', '1px solid #30363d')
+      .style('border-radius', '6px')
+      .style('padding', '8px 12px')
+      .style('font-size', '0.8125rem')
+      .style('color', '#dfe2eb')
+      .style('pointer-events', 'none')
+      .style('opacity', '0')
+      .style('z-index', '10')
+      .style('max-width', '400px');
+
     // Render directory group headers (non-leaf nodes with depth 1+)
     const dirGroups = root.descendants().filter((d) => d.children && d.depth >= 1);
 
@@ -166,6 +182,12 @@ export default function DirectoryTreemap({ data, onPathSelect, currentPath, owne
       .on('contextmenu', (event: MouseEvent, d) => {
         event.preventDefault();
         window.open(`https://github.com/${owner}/${repo}/tree/HEAD/${d.data.path}`, '_blank');
+      })
+      .on('mouseover', function () {
+        d3.select(this).attr('stroke', '#58a6ff').attr('stroke-width', 1);
+      })
+      .on('mouseout', function () {
+        d3.select(this).attr('stroke', '#30363d').attr('stroke-width', 1);
       });
 
     // Directory header bar
@@ -178,6 +200,14 @@ export default function DirectoryTreemap({ data, onPathSelect, currentPath, owne
       .style('cursor', 'pointer')
       .on('click', (_event, d) => {
         onPathSelect(d.data.path);
+      })
+      .on('mouseover', function () {
+        const parentG = d3.select(this.parentNode as SVGGElement);
+        parentG.select('rect').attr('stroke', '#58a6ff').attr('stroke-width', 1);
+      })
+      .on('mouseout', function () {
+        const parentG = d3.select(this.parentNode as SVGGElement);
+        parentG.select('rect').attr('stroke', '#30363d').attr('stroke-width', 1);
       });
 
     // Square bottom corners of header (overlap with body)
@@ -204,6 +234,23 @@ export default function DirectoryTreemap({ data, onPathSelect, currentPath, owne
         const maxChars = Math.floor((w - 12) / 7);
         return name.length > maxChars ? name.slice(0, maxChars - 1) + '…' : name;
       });
+
+    // Directory tooltip on hover
+    dirG
+      .on('mousemove', (event: MouseEvent, d) => {
+        tooltip
+          .style('opacity', '1')
+          .style('left', `${Math.min(event.offsetX + 12, width - 300)}px`)
+          .style('top', `${event.offsetY - 8}px`)
+          .html(
+            `<div style="font-weight:600;margin-bottom:4px;font-family:monospace;word-break:break-all">📁 ${d.data.path}</div>` +
+            `<div style="color:#3fb950">+${d.data.additions.toLocaleString()}</div>` +
+            `<div style="color:#f85149">-${d.data.deletions.toLocaleString()}</div>` +
+            `<div style="color:#8b949e">±${(d.value ?? 0).toLocaleString()} total changes</div>` +
+            `<div style="margin-top:4px;color:#6e7681;font-size:0.6875rem">Click to drill down · Right-click → GitHub</div>`
+          );
+      })
+      .on('mouseleave', () => tooltip.style('opacity', '0'));
 
     // Directory change count in header (right-aligned)
     dirG
@@ -290,22 +337,6 @@ export default function DirectoryTreemap({ data, onPathSelect, currentPath, owne
       .attr('font-size', '0.625rem')
       .attr('pointer-events', 'none')
       .text((d) => `±${d.data.value.toLocaleString()}`);
-
-    // Tooltip
-    const tooltip = d3
-      .select(container)
-      .append('div')
-      .style('position', 'absolute')
-      .style('background', '#161b22')
-      .style('border', '1px solid #30363d')
-      .style('border-radius', '6px')
-      .style('padding', '8px 12px')
-      .style('font-size', '0.8125rem')
-      .style('color', '#dfe2eb')
-      .style('pointer-events', 'none')
-      .style('opacity', '0')
-      .style('z-index', '10')
-      .style('max-width', '400px');
 
     leafG
       .on('mousemove', (event: MouseEvent, d) => {
