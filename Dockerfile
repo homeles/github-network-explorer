@@ -5,7 +5,7 @@ WORKDIR /app
 COPY pnpm-workspace.yaml package.json pnpm-lock.yaml ./
 COPY client/package.json ./client/
 COPY server/package.json ./server/
-RUN pnpm config set enableScripts true && pnpm install --frozen-lockfile
+RUN pnpm install --frozen-lockfile
 COPY client ./client
 RUN pnpm --filter ./client build
 
@@ -16,7 +16,7 @@ WORKDIR /app
 COPY pnpm-workspace.yaml package.json pnpm-lock.yaml ./
 COPY client/package.json ./client/
 COPY server/package.json ./server/
-RUN pnpm config set enableScripts true && pnpm install --frozen-lockfile
+RUN pnpm install --frozen-lockfile
 COPY server ./server
 RUN pnpm --filter ./server build
 
