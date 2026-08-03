@@ -1,3 +1,7 @@
 packages:
   - 'client'
   - 'server'
+
+overrides:
+  postcss: ">=8.5.18"
+  "@babel/core": ">=7.29.6"
