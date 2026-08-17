@@ -12,6 +12,7 @@
     "@octokit/rest": "^21.0.2",
     "cors": "^2.8.5",
     "express": "^4.22.2",
+    "express-rate-limit": "^8.6.2",
     "express-session": "^1.18.1",
     "helmet": "^8.0.0",
     "node-cache": "^5.1.2"
