@@ -31,10 +31,22 @@ router.get('/callback', async (req: Request, res: Response): Promise<void> => {
     return;
   }
 
-  if (state !== req.session.oauthState) {
+  const expectedState = req.session.oauthState;
+  // Constant-time comparison; also rejects missing/non-string state outright so
+  // a request with no prior /github call can never satisfy the CSRF check.
+  if (
+    typeof state !== 'string' ||
+    typeof expectedState !== 'string' ||
+    state.length !== expectedState.length ||
+    !crypto.timingSafeEqual(Buffer.from(state), Buffer.from(expectedState))
+  ) {
+    delete req.session.oauthState;
     res.redirect(`${clientUrl}?error=invalid_state`);
     return;
   }
+
+  // Single-use state: prevents replaying a captured callback URL.
+  delete req.session.oauthState;
 
   try {
     const tokenResponse = await fetch(
@@ -64,10 +76,25 @@ router.get('/callback', async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    req.session.accessToken = tokenData.access_token;
-    delete req.session.oauthState;
-
-    res.redirect(clientUrl);
+    // Regenerate the session ID on privilege change to defeat session fixation:
+    // an attacker-planted pre-auth cookie must not become an authenticated one.
+    const accessToken = tokenData.access_token;
+    req.session.regenerate((regenErr) => {
+      if (regenErr) {
+        console.error('Session regenerate error:', regenErr);
+        res.redirect(`${clientUrl}?error=server_error`);
+        return;
+      }
+      req.session.accessToken = accessToken;
+      req.session.save((saveErr) => {
+        if (saveErr) {
+          console.error('Session save error:', saveErr);
+          res.redirect(`${clientUrl}?error=server_error`);
+          return;
+        }
+        res.redirect(clientUrl);
+      });
+    });
   } catch (err) {
     console.error('OAuth callback error:', err);
     res.redirect(`${clientUrl}?error=server_error`);
@@ -125,6 +152,8 @@ router.post('/logout', (req: Request, res: Response): void => {
       res.status(500).json({ error: 'Logout failed' });
       return;
     }
+    // Clear the cookie too, so a stale session id is not replayed.
+    res.clearCookie('gne.sid');
     res.json({ success: true });
   });
 });

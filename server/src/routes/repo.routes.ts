@@ -17,15 +17,34 @@ function str(param: string | string[] | undefined): string {
   return param ?? '';
 }
 
+// Per-user cache namespace: GitHub responses depend on the caller's grants, so
+// a shared key can serve one user's private repository data to another.
+function scope(req: Request): string {
+  return cacheService.userScope(req.session.accessToken!);
+}
+
+// Bounds user-controlled pagination so a request cannot ask for an unbounded
+// page size and amplify load against the GitHub API.
+function clampInt(
+  raw: unknown,
+  fallback: number,
+  min: number,
+  max: number
+): number {
+  const parsed = typeof raw === 'string' ? parseInt(raw, 10) : NaN;
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.min(Math.max(parsed, min), max);
+}
+
 // GET /api/repos - list user repos (supports ?page=1&per_page=30 for paginated ReposPage response)
 router.get('/', async (req: Request, res: Response): Promise<void> => {
   const pageParam = typeof req.query.page === 'string' ? req.query.page : undefined;
   const perPageParam = typeof req.query.per_page === 'string' ? req.query.per_page : undefined;
 
   if (pageParam !== undefined || perPageParam !== undefined) {
-    const page = parseInt(pageParam ?? '1', 10) || 1;
-    const perPage = parseInt(perPageParam ?? '30', 10) || 30;
-    const cacheKey = cacheService.cacheKey(['repos-paged', req.session.accessToken!.slice(-8), String(page), String(perPage)]);
+    const page = clampInt(pageParam, 1, 1, 1000);
+    const perPage = clampInt(perPageParam, 30, 1, 100);
+    const cacheKey = cacheService.cacheKey(['repos-paged', scope(req), String(page), String(perPage)]);
     const cached = cacheService.get(cacheKey);
     if (cached) {
       res.json(cached);
@@ -45,7 +64,7 @@ router.get('/', async (req: Request, res: Response): Promise<void> => {
 
   const cacheKey = cacheService.cacheKey([
     'repos',
-    req.session.accessToken!.slice(-8),
+    scope(req),
   ]);
   const cached = cacheService.get(cacheKey);
   if (cached) {
@@ -70,7 +89,7 @@ router.get(
   async (req: Request, res: Response): Promise<void> => {
     const owner = str(req.params['owner']);
     const repo = str(req.params['repo']);
-    const cacheKey = cacheService.cacheKey(['overview', owner, repo]);
+    const cacheKey = cacheService.cacheKey(['overview', scope(req), owner, repo]);
     const cached = cacheService.get(cacheKey);
     if (cached) {
       res.json(cached);
@@ -103,6 +122,7 @@ router.get(
 
     const cacheKey = cacheService.cacheKey([
       'commits',
+      scope(req),
       owner,
       repo,
       branch,
@@ -142,7 +162,7 @@ router.get(
     const owner = str(req.params['owner']);
     const repo = str(req.params['repo']);
     const sha = str(req.params['sha']);
-    const cacheKey = cacheService.cacheKey(['commit', owner, repo, sha]);
+    const cacheKey = cacheService.cacheKey(['commit', scope(req), owner, repo, sha]);
     const cached = cacheService.get(cacheKey);
     if (cached) {
       res.json(cached);
@@ -171,7 +191,7 @@ router.get(
   async (req: Request, res: Response): Promise<void> => {
     const owner = str(req.params['owner']);
     const repo = str(req.params['repo']);
-    const cacheKey = cacheService.cacheKey(['branches', owner, repo]);
+    const cacheKey = cacheService.cacheKey(['branches', scope(req), owner, repo]);
     const cached = cacheService.get(cacheKey);
     if (cached) {
       res.json(cached);
@@ -196,7 +216,7 @@ router.get(
   async (req: Request, res: Response): Promise<void> => {
     const owner = str(req.params['owner']);
     const repo = str(req.params['repo']);
-    const cacheKey = cacheService.cacheKey(['tags', owner, repo]);
+    const cacheKey = cacheService.cacheKey(['tags', scope(req), owner, repo]);
     const cached = cacheService.get(cacheKey);
     if (cached) {
       res.json(cached);
@@ -221,10 +241,15 @@ router.get(
   async (req: Request, res: Response): Promise<void> => {
     const owner = str(req.params['owner']);
     const repo = str(req.params['repo']);
-    const state =
-      typeof req.query.state === 'string' ? req.query.state : 'OPEN';
+    const requestedState =
+      typeof req.query.state === 'string' ? req.query.state.toUpperCase() : 'OPEN';
+    // Allowlist: this value is interpolated into the upstream GraphQL query.
+    const ALLOWED_PR_STATES = ['OPEN', 'CLOSED', 'MERGED'];
+    const state = ALLOWED_PR_STATES.includes(requestedState)
+      ? requestedState
+      : 'OPEN';
 
-    const cacheKey = cacheService.cacheKey(['pulls', owner, repo, state]);
+    const cacheKey = cacheService.cacheKey(['pulls', scope(req), owner, repo, state]);
     const cached = cacheService.get(cacheKey);
     if (cached) {
       res.json(cached);
@@ -254,11 +279,11 @@ router.get(
     const since = typeof req.query.since === 'string' ? req.query.since : undefined;
     const until = typeof req.query.until === 'string' ? req.query.until : undefined;
     const path = typeof req.query.path === 'string' ? req.query.path : undefined;
-    const maxCommits = typeof req.query.maxCommits === 'string' ? parseInt(req.query.maxCommits, 10) : undefined;
-    const tzOffset = typeof req.query.tzOffset === 'string' ? parseInt(req.query.tzOffset, 10) : undefined;
+    const maxCommits = clampInt(req.query.maxCommits, 100, 1, 5000);
+    const tzOffset = typeof req.query.tzOffset === 'string' ? clampInt(req.query.tzOffset, 0, -840, 840) : undefined;
     const stream = req.query.stream === '1';
 
-    const cacheKey = cacheService.cacheKey(['code-frequency', owner, repo, path ?? '', since ?? '', until ?? '', String(maxCommits ?? 100), String(tzOffset ?? '')]);
+    const cacheKey = cacheService.cacheKey(['code-frequency', scope(req), owner, repo, path ?? '', since ?? '', until ?? '', String(maxCommits), String(tzOffset ?? '')]);
     const cached = cacheService.get(cacheKey);
 
     // ── Non-streaming path (backwards compatible) ──────────────────────────

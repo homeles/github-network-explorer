@@ -11,14 +11,33 @@ function getGitHubService(req: Request): GitHubService {
   return new GitHubService(req.session.accessToken!);
 }
 
+// Per-user cache namespace: GitHub responses depend on the caller's grants, so
+// a shared key can serve private org data to a user who cannot see it.
+function scope(req: Request): string {
+  return cacheService.userScope(req.session.accessToken!);
+}
+
 function str(param: string | string[] | undefined): string {
   if (Array.isArray(param)) return param[0] ?? '';
   return param ?? '';
 }
 
+// Bounds user-controlled pagination so a request cannot ask for an unbounded
+// page size and amplify load against the GitHub API.
+function clampInt(
+  raw: unknown,
+  fallback: number,
+  min: number,
+  max: number
+): number {
+  const parsed = typeof raw === 'string' ? parseInt(raw, 10) : NaN;
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.min(Math.max(parsed, min), max);
+}
+
 // GET /api/orgs - list user organizations
 router.get('/', async (req: Request, res: Response): Promise<void> => {
-  const cacheKey = cacheService.cacheKey(['orgs', req.session.accessToken!.slice(-8)]);
+  const cacheKey = cacheService.cacheKey(['orgs', scope(req)]);
   const cached = cacheService.get(cacheKey);
   if (cached) {
     res.json(cached);
@@ -39,10 +58,10 @@ router.get('/', async (req: Request, res: Response): Promise<void> => {
 // GET /api/orgs/:org/repos?page=1&per_page=30 - paginated org repos
 router.get('/:org/repos', async (req: Request, res: Response): Promise<void> => {
   const org = str(req.params['org']);
-  const page = parseInt(typeof req.query.page === 'string' ? req.query.page : '1', 10) || 1;
-  const perPage = parseInt(typeof req.query.per_page === 'string' ? req.query.per_page : '30', 10) || 30;
+  const page = clampInt(req.query.page, 1, 1, 1000);
+  const perPage = clampInt(req.query.per_page, 30, 1, 100);
 
-  const cacheKey = cacheService.cacheKey(['org-repos', org, String(page), String(perPage)]);
+  const cacheKey = cacheService.cacheKey(['org-repos', scope(req), org, String(page), String(perPage)]);
   const cached = cacheService.get(cacheKey);
   if (cached) {
     res.json(cached);
