@@ -2,6 +2,7 @@ import { useEffect, useRef, useMemo } from 'react';
 import * as d3 from 'd3';
 import { buildNetworkLayout, getLaneColor } from '../lib/network-dag.js';
 import type { CommitNode } from '../lib/api.js';
+import { escapeHtml } from '../lib/html.js';
 
 const NODE_RADIUS = 6;
 const LANE_HEIGHT = 40;
@@ -332,19 +333,19 @@ export default function NetworkGraphVisualization({
                   ${commitBranches
                     .map(
                       (b) =>
-                        `<span style="background:rgba(88,166,255,0.15);color:#58a6ff;border:1px solid rgba(88,166,255,0.3);border-radius:3px;padding:0 4px;font-family:monospace">${b}</span>`
+                        `<span style="background:rgba(88,166,255,0.15);color:#58a6ff;border:1px solid rgba(88,166,255,0.3);border-radius:3px;padding:0 4px;font-family:monospace">${escapeHtml(b)}</span>`
                     )
                     .join('')}
                  </div>`
               : '';
 
           tooltip.innerHTML = `
-            <div style="font-weight:600;color:#dfe2eb;margin-bottom:4px;word-break:break-all">${subject}</div>
+            <div style="font-weight:600;color:#dfe2eb;margin-bottom:4px;word-break:break-all">${escapeHtml(subject)}</div>
             <div style="display:flex;gap:12px;font-size:11px;color:#8b949e;margin-bottom:2px">
-              <span style="font-family:monospace;color:#58a6ff">${node.abbreviatedOid}</span>
-              <span>${formatFullDate(node.committedDate)}</span>
+              <span style="font-family:monospace;color:#58a6ff">${escapeHtml(node.abbreviatedOid)}</span>
+              <span>${escapeHtml(formatFullDate(node.committedDate))}</span>
             </div>
-            <div style="font-size:11px;color:#c0c7d4">${authorLine}</div>
+            <div style="font-size:11px;color:#c0c7d4">${escapeHtml(authorLine)}</div>
             <div style="font-size:11px;color:#8b949e;margin-top:2px">
               <span style="color:#3fb950">+${node.additions}</span>
               <span style="margin-left:6px;color:#f85149">−${node.deletions}</span>

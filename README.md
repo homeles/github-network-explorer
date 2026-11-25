@@ -199,7 +199,7 @@ All GraphQL fields are verified against the [GitHub GraphQL Reference](https://d
 | Build tool | Vite 6 |
 | Styling | Tailwind CSS 4 + shadcn/ui |
 | Data fetching | TanStack Query v5 |
-| Graph rendering | D3 v7 + d3-dag (custom lane-based layout) |
+| Graph rendering | D3 v7 (custom lane-based layout) |
 | Routing | React Router v7 |
 | Backend | Express 4 + TypeScript |
 | GitHub API | `@octokit/graphql` + `@octokit/rest` |
