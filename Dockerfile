@@ -1,6 +1,6 @@
 # Stage 1: Build client
 FROM node:22-alpine AS client-builder
-RUN npm install -g pnpm@9
+RUN npm install -g pnpm@9.15.9
 WORKDIR /app
 COPY pnpm-workspace.yaml package.json pnpm-lock.yaml ./
 COPY client/package.json ./client/
@@ -11,7 +11,7 @@ RUN pnpm --filter ./client build
 
 # Stage 2: Build server
 FROM node:22-alpine AS server-builder
-RUN npm install -g pnpm@9
+RUN npm install -g pnpm@9.15.9
 WORKDIR /app
 COPY pnpm-workspace.yaml package.json pnpm-lock.yaml ./
 COPY client/package.json ./client/

@@ -7,6 +7,7 @@ on:
       - 'client/src/components/**'
       - 'client/src/lib/dag.ts'
       - 'client/src/lib/network-dag.ts'
+      - 'client/src/lib/html.ts'
       - 'client/src/hooks/useSettings.ts'
       - 'client/src/index.css'
   workflow_dispatch:
@@ -19,13 +20,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout main
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           ref: main
           path: main
 
       - name: Checkout demo branch
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           ref: demo
           path: demo
@@ -51,7 +52,7 @@ jobs:
           done
 
           # Shared lib files (no import changes needed)
-          for file in dag.ts network-dag.ts; do
+          for file in dag.ts network-dag.ts html.ts; do
             if [ -f "main/client/src/lib/$file" ]; then
               cp "main/client/src/lib/$file" "demo/src/lib/$file"
             fi

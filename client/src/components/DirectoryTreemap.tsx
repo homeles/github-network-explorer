@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import * as d3 from 'd3';
 import type { DirectoryStats } from '../lib/api.js';
+import { escapeHtml } from '../lib/html.js';
 
 interface Props {
   data: DirectoryStats[];
@@ -243,7 +244,7 @@ export default function DirectoryTreemap({ data, onPathSelect, currentPath, owne
           .style('left', `${Math.min(event.offsetX + 12, width - 300)}px`)
           .style('top', `${event.offsetY - 8}px`)
           .html(
-            `<div style="font-weight:600;margin-bottom:4px;font-family:monospace;word-break:break-all">📁 ${d.data.path}</div>` +
+            `<div style="font-weight:600;margin-bottom:4px;font-family:monospace;word-break:break-all">📁 ${escapeHtml(d.data.path)}</div>` +
             `<div style="color:#3fb950">+${d.data.additions.toLocaleString()}</div>` +
             `<div style="color:#f85149">-${d.data.deletions.toLocaleString()}</div>` +
             `<div style="color:#8b949e">±${(d.value ?? 0).toLocaleString()} total changes</div>` +
@@ -346,7 +347,7 @@ export default function DirectoryTreemap({ data, onPathSelect, currentPath, owne
           .style('left', `${Math.min(event.offsetX + 12, width - 300)}px`)
           .style('top', `${event.offsetY - 8}px`)
           .html(
-            `<div style="font-weight:600;margin-bottom:4px;font-family:monospace;word-break:break-all">${icon} ${d.data.path}</div>` +
+            `<div style="font-weight:600;margin-bottom:4px;font-family:monospace;word-break:break-all">${icon} ${escapeHtml(d.data.path)}</div>` +
             `<div style="color:#3fb950">+${d.data.additions.toLocaleString()}</div>` +
             `<div style="color:#f85149">-${d.data.deletions.toLocaleString()}</div>` +
             `<div style="color:#8b949e">±${d.data.value.toLocaleString()} total changes</div>` +

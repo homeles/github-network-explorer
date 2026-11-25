@@ -31,10 +31,18 @@ router.get('/callback', async (req: Request, res: Response): Promise<void> => {
     return;
   }
 
-  if (state !== req.session.oauthState) {
+  const expectedState = req.session.oauthState;
+  if (
+    typeof state !== 'string' ||
+    typeof expectedState !== 'string' ||
+    state.length !== expectedState.length ||
+    !crypto.timingSafeEqual(Buffer.from(state), Buffer.from(expectedState))
+  ) {
     res.redirect(`${clientUrl}?error=invalid_state`);
     return;
   }
+  // Single-use: a state value can't be replayed.
+  delete req.session.oauthState;
 
   try {
     const tokenResponse = await fetch(
@@ -65,7 +73,6 @@ router.get('/callback', async (req: Request, res: Response): Promise<void> => {
     }
 
     req.session.accessToken = tokenData.access_token;
-    delete req.session.oauthState;
 
     res.redirect(clientUrl);
   } catch (err) {

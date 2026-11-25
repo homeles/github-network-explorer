@@ -4,3 +4,4 @@ dist
 *.tsbuildinfo
 server/dist
 client/dist
+package-lock.json

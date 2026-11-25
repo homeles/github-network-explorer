@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import * as d3 from 'd3';
+import { escapeHtml } from '../lib/html.js';
 
 interface Contributor {
   login: string | null;
@@ -123,7 +124,7 @@ export default function ContributorsChart({ contributors }: Props) {
           .style('left', `${event.offsetX + 12}px`)
           .style('top', `${event.offsetY - 8}px`)
           .html(
-            `<div style="font-weight:600;margin-bottom:4px">${d.login ?? d.name ?? 'unknown'}</div>` +
+            `<div style="font-weight:600;margin-bottom:4px">${escapeHtml(d.login ?? d.name ?? 'unknown')}</div>` +
             `<div style="color:#3fb950">+${d.additions.toLocaleString()} additions</div>` +
             `<div style="color:#f85149">-${d.deletions.toLocaleString()} deletions</div>` +
             `<div style="color:#8b949e">${d.commitCount} commit${d.commitCount !== 1 ? 's' : ''}</div>`
